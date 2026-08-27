@@ -1,0 +1,12 @@
+torch
+numpy
+tokenizers
+huggingface_hub
+matplotlib
+sacrebleu
+wandb
+python-dotenv
+
+# reference metric implementations, cross-checked against the hand-rolled ones in utils.py
+rapidfuzz
+rouge-score

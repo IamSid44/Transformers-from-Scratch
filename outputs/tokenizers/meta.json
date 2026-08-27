@@ -1,0 +1,12 @@
+{
+  "cipher_vocab_size": 1024,
+  "plain_vocab_size": 4096,
+  "max_src_len": 1944,
+  "max_tgt_len": 728,
+  "src_len_mean": 432.18925,
+  "tgt_len_mean": 156.30625,
+  "src_len_max": 1940,
+  "tgt_len_max": 722,
+  "src_compression": 11.168824768316195,
+  "tgt_compression": 3.860247111040026
+}
