@@ -176,17 +176,22 @@ Identical across all five configurations, so any difference in the results is ar
 
 Parameter counts: **C1/C2 12.89M, C3 11.70M, C4 12.88M, C5 22.75M.**
 
-Optimisation: Adam at 6e-4 with 2 epochs of linear warmup then cosine decay to **10% of the
-peak**, gradient clipping at 1.0, batch size 1024, up to 50 epochs with early stopping (patience
-5 on validation loss). Training runs in plain fp32.
+Optimisation: Adam at 1e-3 with 1 epoch of linear warmup then cosine decay to **10% of the
+peak** (1e-4), gradient clipping at 1.0, batch size 1024, up to 60 epochs with early stopping
+(patience 5 on validation loss). Training runs in plain fp32.
 
 Batch size moved from 16 to 1024 once chunking (§2) cut sequence lengths to 64 tokens: at 1024,
 C5 (the heaviest configuration) peaks at ~49 GB and processes ~2x the examples/second of
 batch 256, on a card with 75-80 GB free even alongside other jobs -- comfortably using the GPU
-`batch_size=16` (tuned for the old ~1,488-token sequences) left mostly idle. Warmup is 2 epochs
-rather than a fixed step count because `steps_per_epoch` now depends on batch size: at 1024
-that's 39 steps/epoch, so a fixed `warmup_steps=250` (right for the old ~2,480 steps/epoch)
-would have meant over 6 epochs of warmup instead of a small fraction of one.
+`batch_size=16` (tuned for the old ~1,488-token sequences) left mostly idle. Warmup is specified
+in epochs (`warmup_epochs`), not a fixed step count, because `steps_per_epoch` now depends on
+batch size: at 1024 that's 39 steps/epoch, so a fixed `warmup_steps=250` (right for the old
+~2,480 steps/epoch) would have meant over 6 epochs of warmup instead of a small fraction of one.
+`lr=6e-4`/`warmup_epochs=2` was the first setting tried at this batch size; `lr=1e-3` (higher,
+since a much bigger batch gives a lower-variance gradient estimate that tolerates a larger step)
+and `warmup_epochs=1`/`epochs=60` followed after the first several epochs of that run showed
+validation loss still dropping steadily with no sign of a plateau, prompting a higher LR and a
+larger epoch budget rather than waiting out the original one.
 
 An earlier run used a 75% floor, on the reading that both losses still falling at the final
 epoch meant the schedule was winding down too early. That was the wrong diagnosis: the losses
@@ -204,7 +209,7 @@ Two deliberate design choices:
    English, so the overlap is empty.
 
 **No weight decay and no mixed precision.** Both were removed as unnecessary: the models are
-12–23M parameters trained for at most 50 epochs on 39,683 chunks with dropout 0.1 and label
+12–23M parameters trained for at most 60 epochs on 39,683 chunks with dropout 0.1 and label
 smoothing 0.1 already regularising, and the 96 GB card has no memory pressure that fp16 would
 relieve. Dropping AMP also removes the `GradScaler`, the autocast contexts, and the float32
 softmax/norm upcasts that existed solely to stop fp16 underflow — see §5.

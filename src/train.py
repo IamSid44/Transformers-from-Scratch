@@ -95,10 +95,10 @@ class ModelConfig:
 class TrainConfig:
     """Shared across all five configurations, so any difference is architectural."""
 
-    epochs: int = 50
+    epochs: int = 60
     batch_size: int = 1024
-    lr: float = 6e-4                       # Adam, linear warmup then cosine decay
-    warmup_epochs: float = 2               # converted to a step count in train_one, since
+    lr: float = 1e-3                       # Adam, linear warmup then cosine decay to 10% of peak
+    warmup_epochs: float = 1               # converted to a step count in train_one, since
                                             # steps_per_epoch depends on batch_size and corpus size
     grad_clip: float = 1.0
     label_smoothing: float = 0.1

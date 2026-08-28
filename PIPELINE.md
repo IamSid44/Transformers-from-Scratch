@@ -247,14 +247,14 @@ distinct 3-grams — against 8192 on the English side.
 
 [`train_one`](src/train.py#L203) after building data and model:
 
-- **Optimizer** — Adam, `lr=6e-4`. No weight decay: dropout 0.1 and label smoothing 0.1
-  already regularise a 12–23M model trained for at most 50 epochs on 39,683 chunks.
-- **Schedule** — `LambdaLR` with `warmup_epochs` (2) worth of linear warmup, then cosine decay
+- **Optimizer** — Adam, `lr=1e-3`. No weight decay: dropout 0.1 and label smoothing 0.1
+  already regularise a 12–23M model trained for at most 60 epochs on 39,683 chunks.
+- **Schedule** — `LambdaLR` with `warmup_epochs` (1) worth of linear warmup, then cosine decay
   to 10% of peak. Warmup is specified in epochs, not a fixed step count, and converted to
   `warmup_steps = round(warmup_epochs * steps_per_epoch)` inside `train_one`: `steps_per_epoch`
   depends on `batch_size`, so a fixed step count picked for one batch size silently means a
-  different fraction of training at another. At `batch_size=1024` that's 39 steps/epoch, so 2
-  epochs is 78 steps.
+  different fraction of training at another. At `batch_size=1024` that's 39 steps/epoch, so 1
+  epoch is 39 steps.
   An earlier run used a 75% floor, on the reading that the losses were still falling at the
   last epoch because the rate had wound down too far. That was the wrong diagnosis: they
   plateaued high because the old tokenization gave the model no aligned units to learn from
