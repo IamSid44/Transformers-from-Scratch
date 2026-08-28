@@ -23,7 +23,11 @@ python src/train.py --config C1
    without the file.
 2. **`utils.set_seed(ds.SEED)`** — seeds `random`, `numpy`, `torch`, CUDA, `PYTHONHASHSEED`.
 3. **Device selection** — `cuda` unless `--cpu` or no GPU is visible.
-4. **Dispatch** — `--evaluate` goes to Stage 6; otherwise Stage 1.
+4. **Dispatch** — `--evaluate` goes straight to Stage 6, against existing checkpoints, without
+   retraining. Otherwise Stage 1, and (unless `--smoke`) Stage 6 runs again automatically right
+   after Stage 5 finishes for that configuration — so with `--all`, C1 trains *and* evaluates
+   before C2 starts, and `results.csv`/`results.json`/the figures are rewritten after every
+   configuration, not just at the end of the run.
 
 `TrainConfig()` is instantiated once and shared by every configuration in the run, so optimiser,
 schedule, batch size and epoch budget are identical by construction. Any difference in results
@@ -51,13 +55,12 @@ brown_plain.txt   ──►  plain_lines:  list[str]   5000 text lines
 **`split_line_ids(5000, seed=42)`** shuffles `range(5000)` with a seeded RNG and slices
 4000 / 500 / 500.
 
-The split is over lines, and **one example is one whole line** — there is no windowing or
-chunking anywhere in the pipeline. A line goes in whole and is scored whole.
+The split is over lines. A line is **not** the training/decoding unit, though — see 1d.
 
 ### 1c. Pair up
 
-**`build_splits()`** wraps each selected line as a `Pair`, so each split is a list of examples
-in `line_id` order.
+**`build_splits()`** wraps each selected line as a `Pair`, so each split is a list of
+whole-line examples in `line_id` order.
 
 ```
 build_splits() ──► ({"train": [Pair]×4000,
@@ -68,6 +71,23 @@ build_splits() ──► ({"train": [Pair]×4000,
 
 Each `Pair` holds `line_id`, `cipher` (bit string), `plain` (text).
 
+### 1d. Chunk
+
+**`chunk_pairs(pairs, chunk_chars=CHUNK_CHARS=64)`** expands every whole-line `Pair` into
+consecutive fixed-size pieces, cut on the raw character/bit strings before either tokenizer
+runs: `Pair(line_id, cipher[8*start:8*end], plain[start:end])` for `start` stepping by 64
+characters. `cipher[8*start:8*end]` is always exactly `8*(end-start)` bits — the bits of
+exactly `plain[start:end]`'s characters, no more, no less — so alignment is exact by
+construction, using only the disclosed 8-bits-per-character fact. A line's last chunk is
+whatever remains (1 to 64 characters). All of one line's chunks keep its `line_id` and stay
+consecutive and in order in the output list, which is what lets evaluation regroup them later.
+
+**A chunk, not a line, is the actual training/decoding example** from here on:
+4,000/500/500 lines become 39,683/4,685/4,782 chunks (train/val/test). `info["pairs"]` in
+`make_dataloaders` (Stage 3) stays at whole-line granularity — it's the ground truth
+evaluation reconstructs against — while every `Dataset`/`DataLoader` is built from the chunked
+lists instead.
+
 ---
 
 ## Stage 2 — Tokenization
@@ -75,17 +95,36 @@ Each `Pair` holds `line_id`, `cipher` (bit string), `plain` (text).
 Only on the C1–C4 path. C5 skips this stage entirely — that *is* the C5 ablation.
 
 **`build_tokenizers(train_ciphers, train_plains)`** reloads from `outputs/tokenizers/` if
-present, otherwise trains and saves. **Inputs are the training split only**; training a
-vocabulary on val or test text would leak.
+present, otherwise trains and saves. **Inputs are the training split's chunks** (Stage 1d),
+not whole lines — merge frequencies should reflect what the model actually encodes at both
+train and eval time. Training a vocabulary on val or test text would also leak.
 
 Two separate tokenizers, because the alphabets do not overlap at all:
 
 | | Cipher | Plaintext |
 |---|---|---|
-| Alphabet | `{"0", "1"}` | ByteLevel (all 256 bytes) |
-| Pre-tokenizer | **none** | `ByteLevel(add_prefix_space=False)` |
-| Vocabulary | 1024 | 4096 |
-| Why | A bit string has no word boundaries, so BPE may merge anywhere. Merges become learned groupings of bits. | Whitespace round-trips byte-for-byte through `decode`. |
+| Alphabet | 256 byte values (`ByteLevel.alphabet()`) | `a-z`, `A-Z`, space (53 characters) |
+| Pre-processing | `dataset.cipher_to_symbols`: each 8-bit unit -> one atomic symbol | none |
+| Pre-tokenizer | none (whole chunk is one BPE "word") | `Split(" ?[A-Za-z]+", "isolated")` |
+| Decoder | `Fuse`, then `dataset.symbols_to_cipher` | `Fuse` |
+| Vocabulary cap | 1024 | 4096 |
+| Why | Each 8-bit unit is one plaintext character's cipher byte. Mapping it to a single symbol first (the same byte<->character bijection `ByteLevel` uses) and then running BPE with **no** boundary restriction inside a chunk lets merges combine adjacent symbols into tokens spanning multiple characters — the same way ordinary BPE combines characters into words. A token can never span two *chunks*, since each chunk is encoded independently (Stage 1d). | Those 53 characters are all the corpus contains, so a byte-level alphabet would spend 203 of its 256 symbols on bytes that never occur. Each pre-token is a word carrying its own leading space, which makes the space an ordinary vocabulary character and `decode` plain concatenation — still exact. |
+
+Measured over the trained cipher vocabulary: 4 special ids + 256 single-byte tokens (forced in
+by `ByteLevel.alphabet()` regardless of frequency) + 764 learned multi-character merge tokens
+= 1024, and all 764 merge tokens are exercised. Of the 256 single-byte tokens, only 126 ever
+occur in this corpus (all with the high bit clear); the other 130 sit in the vocabulary
+permanently unused — reserved capacity, not a bug.
+
+An earlier version of the cipher tokenizer pre-tokenized into hard 8-bit words so no merge
+could cross an 8-bit-unit boundary, guaranteeing exactly one source token per plaintext
+character. That traded away real compression for positional alignment; this version restores
+ordinary BPE behavior on the cipher side, on the view that unit-boundary-respecting
+multi-character tokens are not the same failure mode as the original (pre-alignment) scheme,
+where a token could span a *fraction* of a character.
+
+Both vocabulary numbers are **ceilings, not targets**: each side runs out of pairs worth
+merging (`min_frequency=2`) well before the cap, and `meta` records what was actually learned.
 
 Both reserve the same four special ids: `<pad>=0`, `<unk>=1`, `<bos>=2`, `<eos>=3`.
 
@@ -99,8 +138,8 @@ meta = {cipher_vocab_size, plain_vocab_size,   # embedding table sizes
         src_compression, tgt_compression}      # mean characters per token
 ```
 
-The caps sit at the **observed maximum**, so nothing is ever truncated. An example is a whole
-line; truncating would delete the end of a document rather than trim a window.
+The caps sit at the **observed maximum**, so nothing is ever truncated. An example is one
+chunk (`max_src_len=64`, `max_tgt_len=64` measured); truncating would delete the end of one.
 
 ---
 
@@ -136,12 +175,12 @@ Both return `{"src": (B, S), "tgt": (B, T)}`.
 
 ### 3c. Length-grouped batching — training only
 
-Line lengths run from 21 to 2,670 characters. Under uniform random batching, batches pad to a
-mean of ~1,113 source tokens against a mean real length of 432 — **61% of attention compute
-spent on padding**.
+Chunks are mostly 64 characters, with a shorter leftover at some lines' ends, so padding waste
+is already small — mean 34 padded tokens vs. mean 33 real per batch under uniform random
+batching (measured).
 
 **`LengthGroupedBatchSampler`** shuffles indices, sorts by length only *within* megabatches of
-`batch_size × 50`, cuts batches, then shuffles the batch order. Padding drops to ~5% while
+`batch_size × 50`, cuts batches, then shuffles the batch order. Padding drops to ~1% while
 batch membership still changes every epoch, because the internal `epoch` counter advances the
 RNG on each `__iter__`.
 
@@ -209,19 +248,31 @@ distinct 3-grams — against 8192 on the English side.
 [`train_one`](src/train.py#L203) after building data and model:
 
 - **Optimizer** — Adam, `lr=6e-4`. No weight decay: dropout 0.1 and label smoothing 0.1
-  already regularise a 12–23M model trained for at most 60 epochs on 4,000 examples.
-- **Schedule** — `LambdaLR` with 250 steps of linear warmup, then cosine decay to 75% of peak.
-  The shallow floor is deliberate: at a 10% floor both losses were still falling at the final
-  epoch, so the schedule was winding down while the model was still learning.
+  already regularise a 12–23M model trained for at most 50 epochs on 39,683 chunks.
+- **Schedule** — `LambdaLR` with 250 steps of linear warmup, then cosine decay to 10% of peak.
+  An earlier run used a 75% floor, on the reading that the losses were still falling at the
+  last epoch because the rate had wound down too far. That was the wrong diagnosis: they
+  plateaued high because the old tokenization gave the model no aligned units to learn from
+  (Stage 2), and a rate that never came down just kept the late epochs noisy.
 - **Precision** — plain fp32. There is no autocast and no `GradScaler`.
 - **`utils.set_seed(ds.SEED)`** is called again at the top, so each configuration starts from
   identical initialization regardless of what ran before it.
+- **Scheduled sampling** — `teacher_forcing_prob(step, warmup_steps, total_steps, floor)`
+  decays from 1.0 through the same warmup the LR schedule uses, down to
+  `scheduled_sampling_floor` (default 0.7) by the end of training. Training is otherwise
+  100% teacher-forced: the decoder is always handed the true previous token, so it never
+  practices recovering from one of its own mistakes -- but at evaluation, greedy decoding
+  (mandated by the assignment for every reported metric) feeds back its *own* output, and any
+  early error compounds through everything after it. Scheduled sampling closes that train/
+  inference gap by occasionally swapping in the model's own prediction during training too.
+  Training-time only: it never touches `greedy_decode` or the evaluation path.
 
 ### One step
 
 ```python
 batch → device
-loss, n_tokens = compute_loss(model_cfg, model, batch, label_smoothing=0.1)
+tf_prob = teacher_forcing_prob(global_step, warmup_steps, total_steps, scheduled_sampling_floor)
+loss, n_tokens = compute_loss(model_cfg, model, batch, label_smoothing=0.1, tf_prob=tf_prob)
 loss.backward()
 grad_norm = clip_grad_norm_(model.parameters(), 1.0)
 optimizer.step()
@@ -229,6 +280,23 @@ optimizer.zero_grad(set_to_none=True)
 scheduler.step()
 step_loss = loss.detach().item()          # after the step, so no graph is pinned
 ```
+
+### Scheduled sampling mechanics
+
+When `tf_prob < 1.0` and the model is training, `compute_loss` runs one extra `torch.no_grad()`
+forward pass to get the model's own predictions, then swaps some decoder-input positions for
+them at rate `1 - tf_prob` before the real (gradient-tracked) forward pass. This is the usual
+parallelizable approximation of scheduled sampling for a Transformer decoder — a fully
+sequential mix would cost one forward pass per position instead of one per batch.
+
+- **Tokenized (C1–C4)**: positions of `tgt_in` (the decoder input) are swapped for the model's
+  own prediction from the previous position. `<bos>` (position 0) is never touched — it has
+  no "own prediction" to be replaced with.
+- **BLT (C5)**: `BLTSeq2Seq.forward` takes an optional `ctx_bytes` argument (default `tgt_bytes`)
+  that drives *both* exposure-bias points in that architecture at once — the patch pooling
+  feeding the global decoder, and the within-patch shift feeding the local decoder — while
+  the loss still supervises against the true `tgt_bytes`. `compute_loss` builds `ctx_bytes` by
+  mixing in the model's own byte predictions at non-`<pad>` positions.
 
 ### The two label conventions
 
@@ -278,6 +346,9 @@ On exit: `outputs/history_<config>.json`, and optionally a HuggingFace push.
 
 ## Stage 6 — Evaluation
 
+Runs automatically right after Stage 5 for the configuration that just trained (see Stage 0),
+and can also be re-run standalone against saved checkpoints without retraining:
+
 ```
 python src/train.py --evaluate --all
 ```
@@ -295,8 +366,9 @@ test split reproducible across processes.
 
 ### 6b. Greedy decode
 
-**`decode_split`** runs `model.greedy_decode` over the split's loader. Greedy is mandated; no
-sampling, no beam search.
+**`decode_split`** runs `model.greedy_decode` over the split's loader — one **chunk** at a
+time, same as training. Greedy is mandated; no sampling, no beam search; chunking doesn't
+change that, it only changes what one decoded sequence covers.
 
 **Tokenized** — start from `<bos>`, repeatedly run the decoder over the whole prefix, take
 `argmax` of the last position, append. Rows that have emitted `<eos>` are frozen to `PAD`. There
@@ -311,12 +383,15 @@ Control symbols other than EOS are replaced with a space. Bytes → text via `by
 
 Decode time and inference peak memory are recorded here.
 
-### 6c. Pair with gold
+### 6c. Reassemble and pair with gold
 
-`decode_split` returns predictions in loader order alongside the split's `Pair` list, so
-`preds[i]` corresponds to `pairs[i]`. This is why val/test order is never shuffled.
+Chunk predictions come back in loader order, one string per chunk. `decode_split` regroups
+them by `chunk_line_ids[split]` (recorded by `make_dataloaders` when it chunked the split) and
+concatenates each line's chunks in order, giving one predicted string per *line* — `preds[i]`
+then corresponds to whole-line `pairs[i]`. This is why chunk order (and val/test order) is
+never shuffled: it's what makes the regrouping correct.
 
-Gold comes from `pair.plain` — the original text, not a detokenized round trip.
+Gold comes from `pair.plain` — the original whole-line text, not a detokenized round trip.
 
 ### 6d. Score
 
@@ -344,30 +419,31 @@ Tracing one C1 batch of 32 examples:
 
 | Point | Object | Shape / type |
 |---|---|---|
-| Corpus | `cipher_lines[k]` | `str`, ~4,827 chars mean |
-| Pair | `Pair.cipher` / `.plain` | `str` / `str`, 8:1 length |
+| Corpus | `cipher_lines[k]` | `str`, ~4,827 bits mean |
+| Pair (whole line) | `Pair.cipher` / `.plain` | `str` / `str`, 8:1 length |
+| Chunk (`chunk_pairs`) | `Pair.cipher` / `.plain` | `str` / `str`, 8:1 length, ≤512 bits / ≤64 chars |
 | Dataset item | `(src, tgt)` | `(S,)`, `(T,)` `long`, variable |
-| Collated | `batch["src"]`, `batch["tgt"]` | `(32, S_max)`, `(32, T_max)` |
-| Embedded | after `_prepare` | `(32, S_max, 256)` |
-| Encoder out | `memory` | `(32, S_max, 256)` |
-| Decoder in | `tgt[:, :-1]` | `(32, T_max - 1)` |
-| Decoder out | hidden | `(32, T_max - 1, 256)` |
-| Logits | `output_proj(hidden)` | `(32, T_max - 1, 4096)` |
-| Labels | `tgt[:, 1:]` | `(32, T_max - 1)` |
+| Collated | `batch["src"]`, `batch["tgt"]` | `(16, S_max)`, `(16, T_max)` |
+| Embedded | after `_prepare` | `(16, S_max, 256)` |
+| Encoder out | `memory` | `(16, S_max, 256)` |
+| Decoder in | `tgt[:, :-1]` | `(16, T_max - 1)` |
+| Decoder out | hidden | `(16, T_max - 1, 256)` |
+| Logits | `output_proj(hidden)` | `(16, T_max - 1, 4096)` |
+| Labels | `tgt[:, 1:]` | `(16, T_max - 1)` |
 | Loss | scalar | `()` |
 
 For C5 the same batch:
 
 | Point | Shape |
 |---|---|
-| `batch["src"]` (bytes, padded to ×16) | `(32, Ls)` |
-| Local encoder out | `(32, Ls, 256)` |
-| Source patches → `memory` | `(32, Ls/16, 256)` |
-| `batch["tgt"]` (bytes, padded to ×8) | `(32, Lt)` |
-| Target patches | `(32, Lt/8, 256)` |
-| Global latents | `(32, Lt/8, 256)` |
-| Byte logits (reshaped) | `(32, Lt, 259)` |
-| Labels | `(32, Lt)` unshifted |
+| `batch["src"]` (bytes, padded to ×16) | `(16, Ls)` |
+| Local encoder out | `(16, Ls, 256)` |
+| Source patches → `memory` | `(16, Ls/16, 256)` |
+| `batch["tgt"]` (bytes, padded to ×8) | `(16, Lt)` |
+| Target patches | `(16, Lt/8, 256)` |
+| Global latents | `(16, Lt/8, 256)` |
+| Byte logits (reshaped) | `(16, Lt, 259)` |
+| Labels | `(16, Lt)` unshifted |
 
 ---
 

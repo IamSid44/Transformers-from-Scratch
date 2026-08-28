@@ -70,19 +70,41 @@ stream.
 
 ### Examples and batching
 
-**One training example is one complete line.** Splitting into train/val/test is done over
-lines (4,000 / 500 / 500, seed 42). There is no windowing or chunking anywhere in the
-pipeline: a line goes in whole and is scored whole.
+Splitting into train/val/test is done over **lines** (4,000 / 500 / 500, seed 42), but a line
+is not what a model trains or decodes on. `dataset.chunk_pairs` cuts each line into consecutive
+64-character pieces (`CHUNK_CHARS = 64`; cipher and plaintext are cut at the same character
+offset, so `cipher[8·start : 8·end]` is always exactly the bits of `plain[start:end]`, no more
+and no less — the only fact this uses is the disclosed 8-bits-per-character encoding, nothing
+about the key). A line's last chunk is whatever is left over, from 1 up to 64 characters.
+**One training/decoding example is one chunk.** This turns 4,000 / 500 / 500 lines into
+39,683 / 4,685 / 4,782 chunks — about 9.9 chunks per line.
 
-Because lines range from 21 to 2,670 characters, the training loader batches examples of
-similar length (`dataset.LengthGroupedBatchSampler`), as in Vaswani et al. §5.1. Without it,
-uniform random batching pads to a mean of 1,113 source tokens against a mean real length of
-432 — **61% of attention compute spent on padding**; with it, 5%. Validation and test keep
-their natural order so predictions stay aligned with their gold lines.
+Why chunk at all, given the pipeline already worked one whole line at a time:
 
-Sequence-length caps sit at the observed maximum (`max_src_len=1944`, `max_tgt_len=728`,
-**0.00% truncation on both sides**): an example is a whole line, so truncating an outlier
-would delete the end of a document.
+- **Compute.** `max_src_len`/`max_tgt_len` collapse from 1,488/720 *tokens* (whole-line) to
+  64/64 tokens (chunked) — attention cost per example drops by roughly two orders of
+  magnitude, comfortably outweighing the ~10x increase in example count.
+- **Possibly, learning.** The cipher's key resets every line, so position 0 of every example
+  already carries a fixed phase in both the old whole-line scheme and the new chunked one —
+  chunking doesn't create this signal, it was already implicit in training on lines at all.
+  What chunking changes is *density*: position indices 0–63 now recur on every single example
+  instead of only at the start of a ~550-character line, giving a learned positional encoding
+  far more repetition to pick the phase pattern up from, over a much shorter span to track it
+  across. This is a hypothesis, not a measured result — it's reported as one, and the
+  compute case above holds regardless of whether it pans out.
+
+Evaluation decodes each test chunk independently (still fully greedy, one chunk at a time —
+this changes nothing about the mandated decoding strategy) and reassembles a line's predicted
+chunks back into one string, in order, before scoring against the whole gold line.
+
+Because chunks vary a little in length (a full 64-character chunk vs. a line's short leftover
+tail), the training loader still batches examples of similar length
+(`dataset.LengthGroupedBatchSampler`), as in Vaswani et al. §5.1 — mean padded batch 34 tokens
+vs. mean real length 33, **1% of attention compute spent on padding** (down from 5% in the
+whole-line scheme, since chunk lengths already vary far less than line lengths did).
+
+Sequence-length caps sit at the observed maximum over chunks (`max_src_len=64`,
+`max_tgt_len=64`, **0.00% truncation on both sides**).
 
 ---
 
@@ -92,17 +114,22 @@ would delete the end of a document.
 # Build the BPE tokenizers and verify the data pipeline (round-trip assertions)
 python src/dataset.py
 
-# Train a single configuration / all five
-python src/train.py --config C1
-python src/train.py --all --epochs 60
+# Check the from-scratch BPE against HuggingFace `tokenizers`, once, on this corpus
+python src/verify_tokenizer.py           # --quick to skip the full-corpus retraining
 
-# Quick wiring check: a few steps, no WandB
+# Train, then evaluate, a single configuration / all five (each config evaluates immediately
+# after it finishes training, before the next one starts -- results.csv/json and the figures
+# are current after every config)
+python src/train.py --config C1
+python src/train.py --all --epochs 50
+
+# Quick wiring check: a few steps, no WandB, no evaluation
 python src/train.py --config C1 --smoke --no-wandb
 
-# Train and upload the checkpoint to HuggingFace
+# Train, evaluate, and upload the checkpoint to HuggingFace
 python src/train.py --config C1 --push
 
-# Greedy-decode the test split and write outputs/
+# Re-evaluate existing checkpoints without retraining
 python src/train.py --evaluate --all
 python src/train.py --evaluate --config C5 --limit-lines 50    # quick check
 ```
@@ -145,32 +172,46 @@ Identical across all five configurations, so any difference in the results is ar
 | `d_ff` | 2048 |
 | Heads `h` (`d_head`) | 8 (32) |
 | Dropout / label smoothing | 0.1 / 0.1 |
-| Batching | grouped by approximate length, batch size 24 |
+| Batching | grouped by approximate length, batch size 16 |
 
 Parameter counts: **C1/C2 12.89M, C3 11.70M, C4 12.88M, C5 22.75M.**
 
-Optimisation: Adam at 6e-4 with 250 steps of linear warmup then cosine decay to **75% of the
-peak**, gradient clipping at 1.0, batch size 24, up to 60 epochs with early stopping (patience
+Optimisation: Adam at 6e-4 with 250 steps of linear warmup then cosine decay to **10% of the
+peak**, gradient clipping at 1.0, batch size 16, up to 50 epochs with early stopping (patience
 5 on validation loss). Training runs in plain fp32.
 
-The decay floor is deliberately shallow. An earlier run decayed to 10% of peak and ended with
-both training and validation loss still falling at the final epoch — the schedule was winding
-down while the model was still learning. A 75% floor leaves the last epochs at 4.5e-4 rather
-than 6e-5, so the extra epochs do useful work.
+An earlier run used a 75% floor, on the reading that both losses still falling at the final
+epoch meant the schedule was winding down too early. That was the wrong diagnosis: the losses
+plateaued high because the old tokenization gave the model nothing aligned to learn from (see
+§5), and a rate that never really came down just kept the late epochs noisy. With the cipher
+side now BPE over byte-boundary-respecting symbols rather than arbitrary bit runs, there are
+real character-aligned units to fit, which is what the 10% floor is for.
 
 Two deliberate design choices:
 
 1. **Pre-LN, not Post-LN.** The assignment (§2) explicitly requires "Pre-Layer
    Normalization" modules, and Pre-LN is the more trainable choice regardless.
-2. **Separate 1,024 / 4,096 vocabularies, not one shared BPE.** Sharing assumes source and
-   target draw on common subwords; here the source alphabet is `{0,1}` and the target is
+2. **Separate cipher / plaintext vocabularies, not one shared BPE.** Sharing assumes source
+   and target draw on common subwords; here the source alphabet is `{0,1}` and the target is
    English, so the overlap is empty.
 
 **No weight decay and no mixed precision.** Both were removed as unnecessary: the models are
-12–23M parameters trained for at most 60 epochs on 4,000 examples with dropout 0.1 and label
+12–23M parameters trained for at most 50 epochs on 39,683 chunks with dropout 0.1 and label
 smoothing 0.1 already regularising, and the 96 GB card has no memory pressure that fp16 would
 relieve. Dropping AMP also removes the `GradScaler`, the autocast contexts, and the float32
 softmax/norm upcasts that existed solely to stop fp16 underflow — see §5.
+
+**Scheduled sampling, training-time only.** The assignment mandates greedy decoding for every
+reported metric (§4), so evaluation can't be changed to fix exposure bias — but training is
+otherwise 100% teacher-forced (the decoder is always handed the true previous token), which
+means the model never practices recovering from a mistake, while greedy decoding at evaluation
+feeds back exactly that, letting one early error compound through everything after it.
+`teacher_forcing_prob(step, warmup_steps, total_steps, floor)` stays at 1.0 through the same
+warmup the LR schedule uses, then linearly decays to `scheduled_sampling_floor` (0.7) by the
+end of training: some decoder-input positions get swapped for the model's own prediction
+instead of the gold token, via one extra `torch.no_grad()` forward pass per training step
+(the usual parallelizable approximation for a Transformer decoder). This never touches
+`greedy_decode` or any evaluation path — see §5 for the mechanics on each of C1–C4 and C5.
 
 ---
 
@@ -192,16 +233,64 @@ reference implementations are used deliberately to *check* the hand-written ones
 
 ### Tokenization (C1–C4)
 
-Two independent BPE tokenizers, both trained on the training split only:
+Two independent BPE tokenizers, trained on the training split's **chunks** (see
+[§2, Examples and batching](#2-dataset)), not whole lines — each chunk is encoded
+independently, so no token can straddle a chunk boundary:
 
-- **cipher**: initial alphabet `{"0", "1"}`, no pre-tokenizer, vocab 1,024. Achieves ~11.2×
-  compression (a mean line of 4,827 bits → ~432 tokens).
-- **plaintext**: GPT-2-style ByteLevel pre-tokenizer, vocab 4,096, ~3.9× compression (a mean
-  line of 603 characters → ~156 tokens). Decoding is verified lossless in
-  `python src/dataset.py`.
+- **cipher**: each 8-bit unit (one plaintext character's cipher byte) is mapped to a single
+  atomic symbol first (`dataset.cipher_to_symbols`, the same byte<->character bijection
+  `ByteLevel` uses over the full 256-value byte alphabet), then BPE runs with **no**
+  pre-tokenizer, so a whole chunk is one "word" and merges are free to combine adjacent
+  symbols into tokens spanning multiple characters — the same way ordinary BPE combines
+  characters into words. Vocab cap 1,024, and this side actually reaches it: 4 special tokens
+  + 256 single-byte tokens (`ByteLevel.alphabet()`, forced into the vocabulary regardless of
+  frequency so no byte value the cipher could in principle produce is ever `<unk>`) + 764
+  learned multi-character merge tokens, all 764 of which are actually exercised. Mean chunk is
+  486.6 bits (60.8 characters) → 33.3 tokens, **14.60× compression**.
 
-Sequence caps sit at the observed maximum — 1,944 source and 728 target — so nothing is
-truncated.
+  Of the 256 single-byte tokens, only **126 ever occur in this corpus** (all with the high bit
+  clear — XORing two mostly-7-bit alphabets never sets it); the other **130 sit in the
+  vocabulary permanently unused** — reserved capacity, never chosen by a merge, never emitted,
+  by design rather than by accident.
+- **plaintext**: `Split(" ?[A-Za-z]+", "isolated")` pre-tokenization over the **53 characters
+  the corpus actually contains** (`a-z`, `A-Z`, space), vocab 4,096, **3.31× compression** (a
+  mean chunk of 60.8 characters → 18.4 tokens). Each pre-token is a word carrying its own
+  leading space, so the space is an ordinary vocabulary character rather than a marker and
+  `decode` is plain concatenation. A byte-level alphabet would have spent 203 of its 256
+  symbols on bytes that never occur. Decoding is verified lossless in `python src/dataset.py`.
+
+This replaces an earlier scheme — free-form BPE over the raw bit string — under which token
+boundaries had nothing to do with the character grid at all: a source token could cover some
+arbitrary run of 11 bits, cutting across the middle of a character's 8-bit encoding, so no
+source position corresponded to any character the decoder had to emit. C1–C4 plateaued around
+4.5–4.7 validation loss as a result, while C5, which reads raw bytes and never had that
+problem, reached 1.96. An intermediate fix (hard 8-bit word boundaries, guaranteeing exactly
+one source token per character) was tried and discarded in favor of the scheme above: it
+forced perfect alignment but gave up real compression, doing hardly more than mapping each
+byte value to a token id (179 tokens used out of a 1,024 cap, 8.0× compression by
+construction). The current scheme keeps merges confined to whole characters — a token can
+span several characters but never a fraction of one — while still letting BPE find and
+exploit repeated cipher-byte patterns, same as it does on the plaintext side. The cipher's
+periodic substitution (each character maps to one of ~7 byte patterns depending on position)
+means any given plaintext bigram is diluted across up to 7 distinct byte-pair realizations,
+so this is short of the compression a comparable English BPE tokenizer would reach on
+unshifted text — but the 1,024-token vocabulary is fully used regardless.
+
+### Scheduled sampling mechanics
+
+`compute_loss` (`train.py`) runs the extra no-grad forward pass and builds the mix only while
+`model.training` and `tf_prob < 1.0`; `evaluate_loss` never passes `tf_prob`, so validation
+loss stays a clean teacher-forced likelihood throughout.
+
+- **Tokenized (C1–C4)** — positions 1..end of the decoder input `tgt_in` get swapped for the
+  model's own prediction from the position before them, at rate `1 - tf_prob`. Position 0
+  (`<bos>`) is never touched.
+- **BLT (C5)** — `BLTSeq2Seq.forward` gained an optional `ctx_bytes` argument (default
+  `tgt_bytes`) that drives the patch pooling feeding the global decoder *and* the within-patch
+  shift feeding the local decoder, while `tgt_bytes` still supplies the loss labels
+  unconditionally. `compute_loss` mixes the model's own byte predictions into `ctx_bytes` at
+  non-`<pad>` positions, hitting both of that architecture's exposure-bias points (patch-to-
+  patch and byte-within-patch) with one mix instead of two separate ones.
 
 ### Mask convention
 
@@ -265,8 +354,11 @@ compute:
    caller used them, which kept a full score tensor alive per layer.
 
 Together these keep C5 training within a workable footprint. Without the first change alone,
-an earlier build of this model peaked at ~61 GB; the exact figure for the current geometry
-(4 + 4 layers, 8 heads, `d_ff=2048`) is reported in `outputs/runtime_stats.json` after a run.
+an earlier build of this model — trained one whole line (up to 2,670 characters) at a time —
+peaked at ~61 GB; chunking (§2) has since cut the sequence lengths involved by more than an
+order of magnitude, so this optimization matters far less now than when it was written, but
+it's still in place. The exact current figure (4 + 4 layers, 8 heads, `d_ff=2048`, 64-character
+chunks) is reported in `outputs/runtime_stats.json` after a run.
 
 ### Comparability caveats
 
@@ -275,9 +367,9 @@ says so explicitly:
 
 - **Validation loss.** C1–C4 predict over a 4,096-way subword vocabulary, C5 over a 259-way
   byte vocabulary. A lower cross-entropy for C5 is partly just a smaller output space.
-- **Tokens/second.** A "token" is a BPE subword (~156 per line) for C1–C4 but a raw byte
-  (~604 per line) for C5. `examples_per_sec` and `sec_per_epoch` are the honest throughput
-  comparisons and are logged alongside.
+- **Tokens/second.** A "token" is a BPE subword (~18 per chunk) for C1–C4 but a raw byte
+  (~62 per chunk: a chunk's characters plus one EOS byte) for C5. `examples_per_sec` and
+  `sec_per_epoch` are the honest throughput comparisons and are logged alongside.
 
 ---
 
@@ -309,6 +401,8 @@ src/
     positional.py    Sinusoidal absolute encoding, RoPE
     norm.py          LayerNorm (hand-written), RMSNorm
     blt.py           Byte vocabulary, local byte encoder/decoder, patch pooling, BLTSeq2Seq
+  bpe.py             Byte-Pair Encoding from scratch: pre-tokenizers, model, trainer, decoders
+  verify_tokenizer.py  Differential test of bpe.py against HuggingFace `tokenizers`
   dataset.py         Paths, data constants, BPE tokenizers, tokenized and token-free loaders
   train.py           The five configurations, model building, training loop, evaluation, CLI
   utils.py           Metrics, plots, seeding, profiling

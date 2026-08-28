@@ -1,12 +1,13 @@
 torch
 numpy
-tokenizers
 huggingface_hub
 matplotlib
 sacrebleu
 wandb
 python-dotenv
 
-# reference metric implementations, cross-checked against the hand-rolled ones in utils.py
+# reference implementations, cross-checked against the hand-rolled ones and not imported by
+# the pipeline itself: `tokenizers` by src/verify_tokenizer.py, the rest by src/utils.py
+tokenizers
 rapidfuzz
 rouge-score

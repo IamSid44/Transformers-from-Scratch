@@ -286,11 +286,22 @@ class BLTSeq2Seq(nn.Module):
         shifted[..., 0] = BYTE_PATCH_START_ID
         return shifted
 
-    def forward(self, src_bytes, tgt_bytes):
+    def forward(self, src_bytes, tgt_bytes, ctx_bytes=None):
         """Teacher-forced. Both inputs are padded to a multiple of their patch size; tgt_bytes
-        also serves as the labels. Returns (B, Lt, BYTE_VOCAB_SIZE)."""
+        serves as the labels. Returns (B, Lt, BYTE_VOCAB_SIZE), aligned with tgt_bytes.
+
+        `ctx_bytes` (default `tgt_bytes`) is what actually conditions the decoder: it drives
+        both the patch pooling that feeds the global decoder and the within-patch shift fed to
+        the local decoder. Scheduled sampling (train.py) passes a version of it with some
+        positions replaced by the model's own prediction, so the labels stay the true target
+        while the conditioning gets a taste of the model's own mistakes -- exactly the two
+        places (patch-to-patch and byte-within-patch) training would otherwise never expose to
+        anything but ground truth, unlike greedy decoding at evaluation time.
+        """
+        if ctx_bytes is None:
+            ctx_bytes = tgt_bytes
         memory, memory_mask = self.encode_source(src_bytes)
-        tgt_patches, tgt_patch_valid = self._target_patches(tgt_bytes)
+        tgt_patches, tgt_patch_valid = self._target_patches(ctx_bytes)
         b, n_patches, _ = tgt_patches.shape
 
         # Shift the patch stream right: slot t holds patch t-1, so the decoder output at slot
@@ -300,7 +311,7 @@ class BLTSeq2Seq(nn.Module):
         latents = self.global_model.decode(dec_in, memory, tgt_mask=tgt_mask,
                                            memory_mask=memory_mask)
 
-        logits = self.local_decoder(latents, self._shift_for_local_decoder(tgt_bytes),
+        logits = self.local_decoder(latents, self._shift_for_local_decoder(ctx_bytes),
                                     memory, memory_mask)
         return logits.reshape(b, n_patches * self.tgt_patch, -1)
 
@@ -407,6 +418,17 @@ if __name__ == "__main__":
 
     out = model.greedy_decode(src, max_bytes=LT)
     assert out.shape[0] == B and out.shape[1] <= LT
+
+    with torch.no_grad():
+        default = model(src, tgt)
+        same = model(src, tgt, ctx_bytes=tgt)
+        assert torch.equal(default, same), "ctx_bytes=tgt_bytes must match the no-arg default"
+        corrupted = tgt.clone()
+        corrupted[:, 0] = (corrupted[:, 0] - 97 + 7) % 26 + 97   # first byte of the first patch
+        different = model(src, tgt, ctx_bytes=corrupted)
+        assert not torch.allclose(default, different, atol=1e-4), \
+            "ctx_bytes did not reach the decoder"
+    print("ctx_bytes overrides the decoder's conditioning independently of the labels")
 
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=3e-4)

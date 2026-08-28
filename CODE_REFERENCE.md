@@ -6,6 +6,8 @@ see [METRICS.md](METRICS.md).
 
 ```
 src/
+├── bpe.py              Byte-Pair Encoding from scratch: pre-tokenizers, model, trainer, decoders
+├── verify_tokenizer.py differential test of bpe.py against HuggingFace `tokenizers`
 ├── dataset.py          corpus loading, BPE tokenizers, datasets, collation, batching
 ├── train.py            configs, model construction, training loop, evaluation, CLI
 ├── utils.py            metrics, seeding, profiling, plots
@@ -31,46 +33,92 @@ Turns two parallel text files into padded batches of tensors.
 | `SEED` | 42 | Seeds the split shuffle and the batch sampler. |
 | `BITS_PER_CHAR` | 8 | Each plaintext character is 8 cipher bits. |
 | `N_TRAIN/VAL/TEST_LINES` | 4000/500/500 | Split sizes, over lines. |
-| `MAX_LINE_CHARS` | 2670 | Longest line in the corpus, measured. |
-| `MAX_LINE_BITS` | 21360 | `MAX_LINE_CHARS * 8`; the BLT source-length cap. |
-| `CIPHER_VOCAB_SIZE` | 1024 | Cipher BPE vocabulary. |
-| `PLAIN_VOCAB_SIZE` | 4096 | Plaintext BPE vocabulary. |
+| `MAX_LINE_CHARS` | 2670 | Longest line in the corpus, measured. No longer a model-facing length cap -- see `CHUNK_CHARS`. |
+| `MAX_LINE_BITS` | 21360 | `MAX_LINE_CHARS * 8`. |
+| `CHUNK_CHARS` | 64 | The actual training/decoding unit is a chunk this many plaintext characters long (512 cipher bits), not a whole line -- see `chunk_pairs`. This is the BLT source/target-length basis now. |
+| `CIPHER_VOCAB_SIZE` | 1024 | Ceiling on the cipher BPE vocabulary. |
+| `PLAIN_VOCAB_SIZE` | 4096 | Ceiling on the plaintext BPE vocabulary. |
+| `CIPHER_ALPHABET` | `["0", "1"]` | The raw cipher text's whole character set (checked by `read_corpus`; not the BPE alphabet -- see `cipher_to_symbols`). |
+| `PLAIN_ALPHABET` | space + `A-Z` + `a-z` | The 53 characters the plaintext uses, and nothing else. |
+| `PLAIN_SPLIT_PATTERN` | `" ?[A-Za-z]+"` | Word pre-tokenization; each word keeps its leading space. |
 | `PAD_ID, UNK_ID, BOS_ID, EOS_ID` | 0, 1, 2, 3 | Special ids, identical in both tokenizers. |
 
 ### `Pair` (frozen dataclass)
 
-One training example — one whole corpus line. Fields: `line_id: int`, `cipher: str` (bit
-string), `plain: str`. The invariant `len(cipher) == 8 * len(plain)` holds by construction.
+One whole corpus line, or (after `chunk_pairs`) one chunk of one -- the same class serves
+both; only `chunk_pairs` changes what's actually inside. Fields: `line_id: int`, `cipher: str`
+(bit string), `plain: str`. The invariant `len(cipher) == 8 * len(plain)` holds by
+construction in both cases. Multiple chunks of one line share its `line_id`.
 
 ### Corpus functions
 
 **`read_corpus() -> (list[str], list[str])`**
-Reads both files, drops blank lines, and raises if the line counts differ or if any line
-violates the 8× length relation. Returns `(cipher_lines, plain_lines)`.
+Reads both files, drops blank lines, and raises if the line counts differ, if any line
+violates the 8× length relation, or if either side uses a character outside its declared
+alphabet. That last check is what lets the two vocabularies below be closed sets: a stray
+character would otherwise become `<unk>` and its line could never be reproduced. Returns
+`(cipher_lines, plain_lines)`.
 
 **`split_line_ids(n_lines, seed=SEED) -> dict[str, list[int]]`**
 Shuffles `range(n_lines)` with a seeded RNG, slices 4000/500/500, returns sorted id lists under
 `"train"`, `"val"`, `"test"`. Splitting over lines guarantees no line appears in two splits.
 
 **`build_splits() -> (dict[str, list[Pair]], list[str])`**
-Wraps each selected line as a `Pair`. Returns the per-split example lists and the raw
-plaintext lines (indexed by `line_id`).
+Wraps each selected line as a `Pair`. Returns the per-split whole-line lists (the ground truth
+evaluation scores against) and the raw plaintext lines (indexed by `line_id`).
+
+**`chunk_pairs(pairs, chunk_chars=CHUNK_CHARS) -> list[Pair]`**
+Expands each whole-line `Pair` into consecutive `chunk_chars`-character pieces, cutting the
+raw strings (`cipher[8*start:8*end]`, `plain[start:end]`) before either tokenizer runs, so
+alignment between the two sides is exact by construction — no BPE token can ever need to
+know where a chunk boundary falls, since chunking happens first. A line's last chunk is
+whatever remains (1 to `chunk_chars` characters). All of one line's chunks keep its `line_id`
+and stay consecutive, in order, in the returned list — this is what lets callers regroup a
+line's chunk predictions back together (`train.py`'s `decode_split`). This is the function
+that turns "one example is one whole line" into "one example is one chunk": every dataset in
+`make_dataloaders` is built from its output, not from `build_splits`'s output directly.
 
 ### Tokenizer functions
 
-**`_train_bpe(corpus, vocab_size, initial_alphabet, byte_level) -> Tokenizer`**
-Trains one HuggingFace BPE model with `min_frequency=2` and the four special tokens. When
-`byte_level`, attaches a `ByteLevel` pre-tokenizer and decoder so whitespace round-trips
-byte-for-byte.
+**`_train_bpe(corpus, vocab_size, initial_alphabet, pre_tokenizer) -> Tokenizer`**
+Trains one BPE model — from `src/bpe.py`, not the `tokenizers` library — with
+`min_frequency=2`, the four special tokens, and a `Fuse` decoder. `vocab_size` is a ceiling,
+not a guarantee: training stops early once no pair occurs more than once.
+
+**`cipher_to_symbols(cipher: str) -> str`** / **`symbols_to_cipher(symbols: str) -> str`**
+The preprocessing that makes cross-byte BPE possible on the cipher side. Each 8-bit unit
+(one plaintext character's cipher byte) is interpreted as a byte value 0-255 and mapped to a
+single character via the same byte<->character bijection `ByteLevel` uses (`BYTE_TO_CHAR` /
+`CHAR_TO_BYTE` in `bpe.py`). `symbols_to_cipher` is the exact inverse.
+
+**`train_cipher_tokenizer(cipher_texts) -> Tokenizer`**
+Runs `cipher_to_symbols` over the corpus, then trains BPE with **no pre-tokenizer** and the
+full 256-value byte alphabet (`ByteLevel.alphabet()`, not just the 126 byte values this
+corpus's cipher actually realizes — all <128, since XORing two mostly-7-bit alphabets never
+sets the high bit; the other 130 sit in the trained vocabulary as permanently zero-frequency
+tokens). With no pre-tokenizer, `Tokenizer.train_from_iterator` treats each whole *chunk* as
+one "word" (see its `if self.pre_tokenizer is None` branch in `bpe.py`), so merges are free to
+combine adjacent symbols into tokens spanning multiple plaintext characters — never a fraction
+of one, since the symbol *is* the character's whole byte, but also never confined to just one,
+and never across a chunk boundary, since `cipher_texts` here is already chunk-level (see
+`chunk_pairs`).
+
+**`decode_cipher(cipher_tok, ids) -> str`**
+`cipher_tok.decode` followed by `symbols_to_cipher`. Unlike `decode_plain`, nothing wraps the
+source in `<bos>`/`<eos>`, since the cipher is only ever encoder input.
+
+**`train_plain_tokenizer(plain_texts) -> Tokenizer`**
+`Split(" ?[A-Za-z]+", "isolated")` over `PLAIN_ALPHABET`. Each pre-token is a word carrying
+its own leading space, so the space is an ordinary vocabulary character rather than a marker
+and decoding is plain concatenation — still exact, and without spending 203 of a byte-level
+alphabet's 256 symbols on bytes the corpus never contains.
 
 **`build_tokenizers(cipher_texts, plain_texts, force=False) -> (Tokenizer, Tokenizer, dict)`**
 Trains both tokenizers or reloads them from `outputs/tokenizers/` if already present. Inputs
-must be *lists of strings from the training split only* — passing val/test text would leak.
-
-Two asymmetries are deliberate: the cipher tokenizer gets **no pre-tokenizer** (a bit string
-has no word boundaries, so BPE may merge anywhere) and an initial alphabet of exactly
-`["0", "1"]`; the plaintext tokenizer gets a ByteLevel pre-tokenizer and the full byte
-alphabet. A shared vocabulary would be meaningless — the two alphabets do not overlap.
+must be *lists of strings from the training split's chunks* (`chunk_pairs`, not `build_splits`
+directly) — merge frequencies should reflect what the model actually encodes, and passing
+val/test text would also leak.
+A shared vocabulary would be meaningless — the two alphabets do not overlap.
 
 Also derives `meta`, which is persisted to `meta.json` and later travels inside every
 checkpoint:
@@ -123,13 +171,13 @@ rectangular, using `BYTE_PAD_ID`. A class rather than a closure so it stays pick
 DataLoader workers.
 
 **`LengthGroupedBatchSampler(lengths, batch_size, megabatch_factor=50, seed=SEED)`**
-Yields lists of dataset indices. Lines run from 21 to 2,670 characters, so uniform random
-batching pads to a mean of ~1,113 source tokens against a mean real length of 432 — 61% of
-attention compute spent on padding. This shuffles first, sorts by length only *within*
-megabatches of `batch_size * 50`, cuts batches, then shuffles the batch order. Padding drops to
-~5% while batch membership still changes every epoch (the `epoch` counter advances the RNG on
-each `__iter__`). Training loader only — val and test keep their natural order so predictions
-stay aligned with their `Pair` list.
+Yields lists of dataset indices. Chunks are mostly `CHUNK_CHARS` characters, with an
+occasional shorter one at a line's end, so uniform random batching already pads little (mean
+34 padded vs. mean 33 real tokens per batch, measured). This shuffles first, sorts by length
+only *within* megabatches of `batch_size * 50`, cuts batches, then shuffles the batch order.
+Padding drops to ~1% while batch membership still changes every epoch (the `epoch` counter
+advances the RNG on each `__iter__`). Training loader only — val and test keep their natural
+order so predictions stay aligned with their `Pair` list.
 
 **`make_dataloaders(model_cfg, train_cfg, splits=None, tokenizers=None) -> dict`**
 The single entry point that assembles everything. Branches on `model_cfg.is_blt` to pick the
@@ -137,10 +185,11 @@ byte or tokenized path. Returns:
 
 | Key | Contents |
 |---|---|
-| `pairs` | `{split: list[Pair]}` — carries `line_id` and gold text for evaluation. |
-| `datasets` | `{split: Dataset}`. |
+| `pairs` | `{split: list[Pair]}`, **whole-line** — carries `line_id` and gold text for evaluation. |
+| `chunk_line_ids` | `{split: list[int]}` — the `line_id` of each chunk in `datasets`/`loaders` order, same length as the chunked dataset; lets `decode_split` regroup chunk predictions back into lines. |
+| `datasets` | `{split: Dataset}`, built from `chunk_pairs(pairs[split])`, not `pairs[split]` directly. |
 | `loaders` | `{split: DataLoader}`; train uses the length sampler when enabled. |
-| `meta` | Tokenizer metadata, or `{max_src_len: MAX_LINE_BITS, max_tgt_len: MAX_LINE_CHARS + 1}` for BLT. |
+| `meta` | Tokenizer metadata, or `{max_src_len: CHUNK_CHARS * BITS_PER_CHAR, max_tgt_len: CHUNK_CHARS + 1}` for BLT. |
 | `cipher_tok`, `plain_tok` | Present only on the tokenized path. |
 
 ---
@@ -345,13 +394,20 @@ Returns byte logits `(B, N, P, BYTE_VOCAB_SIZE)`.
 | `encode_source(src_bytes)` | Local-encode → pool → global encode. Returns `(memory, memory_mask)`. |
 | `_target_patches(tgt_bytes)` | Causal local-encode → pool. Returns `(patches, valid)`. |
 | `_shift_for_local_decoder(tgt_bytes)` | `(B, Lt)` → `(B, Nt, P)` with each patch's bytes rolled right by one and slot 0 set to `PATCH_START`, so byte `j` conditions on `0..j-1` and never on itself. |
-| `forward(src_bytes, tgt_bytes)` | Teacher-forced. Returns `(B, Lt, BYTE_VOCAB_SIZE)`. |
+| `forward(src_bytes, tgt_bytes, ctx_bytes=None)` | Teacher-forced. Returns `(B, Lt, BYTE_VOCAB_SIZE)`. |
 | `greedy_decode(src_bytes, max_bytes)` | Patch by patch: one global step per latent, then the local decoder emits `tgt_patch` bytes. |
 
 `forward` shifts on **two levels**: the patch stream is shifted right by one (slot `t` holds
 patch `t-1`, with the learned `bos_patch` at slot 0), and the bytes within each patch are
 shifted by one. That is why `compute_loss` supervises BLT against the *unshifted* `tgt` — the
 logits already align with the raw target bytes, unlike the tokenized path.
+
+`ctx_bytes` (default `tgt_bytes`) is what actually drives both shifts above — `tgt_bytes`
+still supplies the loss labels regardless of what `ctx_bytes` is. `compute_loss` uses this to
+inject scheduled sampling: a version of `ctx_bytes` with some positions replaced by the
+model's own prediction, so the conditioning (not the labels) gets a taste of the model's own
+mistakes at both exposure-bias points in this architecture (patch-to-patch and
+byte-within-patch) at once.
 
 The source-side encoder uses `src_ngram_buckets=512` rather than 8192, because only 2³ distinct
 3-grams exist in a binary alphabet.
@@ -421,10 +477,10 @@ shared grid-of-bars helper.
 BLT-only fields (`d_local`, `local_attn_window`, `ngram_buckets`, …) are ignored unless
 `tokenization == "blt"`. Properties: `is_blt`, `d_head`; `to_dict()` for serialization.
 
-**`TrainConfig`** — shared by *all five* configurations: 60 epochs, batch size 24, Adam at
+**`TrainConfig`** — shared by *all five* configurations: 50 epochs, batch size 16, Adam at
 `lr=6e-4` with 250 warmup steps, gradient clipping at 1.0, label smoothing 0.1,
-early-stopping patience 5, length grouping on, `log_every=50`. No weight decay and no mixed
-precision — training is plain fp32.
+`scheduled_sampling_floor=0.7`, early-stopping patience 5, length grouping on, `log_every=50`.
+No weight decay and no mixed precision — training is plain fp32.
 
 **`CONFIGS`** — C2–C5 are built from C1 with `dataclasses.replace`, changing exactly one named
 field each. This makes it structurally impossible for more than the named axis to differ:
@@ -446,7 +502,15 @@ field each. This makes it structurally impossible for more than the named axis t
 `BLTSeq2Seq` when `is_blt`, otherwise `Seq2SeqTransformer` with the vocabulary sizes from
 `meta`. `max_len` is `max(max_src_len, max_tgt_len) + 64`, sized from the data.
 
-**`compute_loss(model_cfg, model, batch, label_smoothing) -> (loss, n_supervised_tokens)`**
+**`teacher_forcing_prob(step, warmup_steps, total_steps, floor) -> float`**
+1.0 through the same warmup the LR schedule uses, then linear decay to `floor` by the end of
+training. The probability that a given decoder-input position uses the true previous token
+rather than the model's own prediction for it (scheduled sampling). Training is otherwise
+100% teacher-forced, so the model never practices recovering from its own mistakes, while
+`greedy_decode` (mandated for every reported metric) feeds back exactly that at evaluation
+time. Training-time only — evaluation and `greedy_decode` are untouched.
+
+**`compute_loss(model_cfg, model, batch, label_smoothing, tf_prob=1.0) -> (loss, n_supervised_tokens)`**
 Teacher-forced forward pass, branching on the two label conventions:
 
 - **Tokenized** — target is `<bos> w1..wn <eos>`; feed `tgt[:, :-1]`, supervise `tgt[:, 1:]`,
@@ -454,10 +518,17 @@ Teacher-forced forward pass, branching on the two label conventions:
 - **BLT** — the model shifts internally on both levels, so its logits already align with the
   raw `tgt`. Ignore index `BYTE_PAD_ID`.
 
+When `tf_prob < 1.0` and `model.training`, one extra `torch.no_grad()` forward pass gets the
+model's own predictions, and some decoder-input positions (`ctx_bytes` for BLT, `tgt_in` for
+the tokenized path) are swapped for them at rate `1 - tf_prob` before the real forward pass —
+the parallelizable approximation of scheduled sampling for a Transformer decoder. `<bos>` is
+never replaced on the tokenized path. `evaluate_loss` never passes `tf_prob`, so validation
+stays a pure teacher-forced likelihood.
+
 Returns the token count alongside the loss so the caller can compute a token-weighted mean
 rather than a mean-of-means.
 
-**`lr_lambda_factory(warmup_steps, total_steps)`** — linear warmup, then cosine decay to 75% of
+**`lr_lambda_factory(warmup_steps, total_steps)`** — linear warmup, then cosine decay to 10% of
 the peak. Returns the multiplier function for `LambdaLR`.
 
 **`evaluate_loss(model_cfg, model, loader, device) -> float`**
@@ -499,11 +570,15 @@ its own `model_config` and `meta`, so the architecture is reconstructed from the
 than from the current source — a config edit cannot silently mismatch an old checkpoint.
 
 **`decode_split(model, model_cfg, data, split, device, limit_lines=None) -> (predictions, pairs, stats)`**
-Greedily decodes one split, dispatching to the byte or token decoder and converting ids back to
-text (`bytes_to_text` or `ds.decode_plain`). With `limit_lines`, rebuilds a `Subset` loader over
-the first N examples — note `loader.batch_size` is `None` when a `batch_sampler` was used, hence
-the fallback. Returns one prediction string per line, the matching `Pair` list, and decode time
-and peak memory.
+Greedily decodes one split **one chunk at a time** (`data["loaders"][split]` is chunk-level),
+dispatching to the byte or token decoder and converting ids back to text (`bytes_to_text` or
+`ds.decode_plain`). With `limit_lines`, restricts to the first N *lines*: since a line's chunks
+are consecutive in `chunk_line_ids[split]`, their kept-line's chunks form a contiguous prefix,
+found with a linear scan, and a `Subset` loader is rebuilt over just that prefix — note
+`loader.batch_size` is `None` when a `batch_sampler` was used, hence the fallback. Chunk
+predictions are then regrouped by `chunk_line_ids[split]` and concatenated in order. Returns
+one prediction string **per line** (post-reassembly), the matching whole-line `Pair` list, and
+decode time and peak memory.
 
 **`evaluate_config(config_name, device, split="test", limit_lines=None, n_samples=8) -> dict`**
 Loads the checkpoint, decodes, scores against the gold lines, writes
@@ -521,13 +596,19 @@ regenerates all three figures, and prints the comparison table.
 **`main()`** — argument parsing and dispatch. Loads `.env`, seeds, selects the device
 (`cuda` unless `--cpu` or unavailable), then either evaluates or trains.
 
+Without `--evaluate`, `main()` loops over the requested configuration(s) and, for each one,
+calls `train_one` and then — unless `--smoke` — immediately `evaluate_config` and
+`write_results` on the accumulated results dict, before moving to the next configuration. So
+`--all` trains and evaluates C1, then C2, and so on; `results.csv`/`results.json`/the three
+figures are current after every configuration finishes, not just at the end of the run.
+
 | Flag | Effect |
 |---|---|
 | `--config C1..C5` | Which configuration (default `C1`). |
-| `--all` | Every configuration in sequence. |
-| `--evaluate` | Decode the test split instead of training. |
+| `--all` | Every configuration in sequence, train-then-evaluate each before the next. |
+| `--evaluate` | Decode the test split against existing checkpoints instead of training. |
 | `--epochs`, `--batch-size`, `--lr` | Override the corresponding `TrainConfig` field. |
-| `--smoke`, `--smoke-steps N` | Run a few steps as a wiring check (default 50). |
+| `--smoke`, `--smoke-steps N` | Run a few steps as a wiring check (default 50); skips the automatic post-train evaluation. |
 | `--limit-lines N` | Evaluate only the first N test lines. |
 | `--no-wandb` | Disable logging. |
 | `--push` | Upload the checkpoint to HuggingFace. |

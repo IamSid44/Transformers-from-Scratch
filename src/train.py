@@ -1,9 +1,9 @@
 """Configurations, training loop, and evaluation.
 
-    python src/train.py --config C1                 # train one configuration
-    python src/train.py --config C1 --smoke         # a few steps, wiring check
-    python src/train.py --all --push                # train C1..C5, upload each to HuggingFace
-    python src/train.py --evaluate --all            # greedy-decode the test split, write outputs/
+    python src/train.py --config C1                 # train, then evaluate, C1
+    python src/train.py --config C1 --smoke         # a few steps, wiring check, no evaluation
+    python src/train.py --all --push                # train+evaluate C1, then C2, ... then C5
+    python src/train.py --evaluate --all            # re-evaluate existing checkpoints only
 
 All five configurations share one TrainConfig, so optimiser, schedule, batch size and epoch
 budget are identical by construction -- any difference in the results comes from the one
@@ -95,12 +95,13 @@ class ModelConfig:
 class TrainConfig:
     """Shared across all five configurations, so any difference is architectural."""
 
-    epochs: int = 60
-    batch_size: int = 24
+    epochs: int = 50
+    batch_size: int = 16
     lr: float = 6e-4                       # Adam, linear warmup then cosine decay
     warmup_steps: int = 250
     grad_clip: float = 1.0
     label_smoothing: float = 0.1
+    scheduled_sampling_floor: float = 0.7  # see teacher_forcing_prob
     early_stopping_patience: int = 5
     group_by_length: bool = True           # batch similar-length lines together
     num_workers: int = 0
@@ -156,18 +157,62 @@ def build_model(model_cfg, meta: dict) -> nn.Module:
                               pad_id=ds.PAD_ID, max_len=max_len)
 
 
-def compute_loss(model_cfg, model, batch, label_smoothing: float):
+def teacher_forcing_prob(step: int, warmup_steps: int, total_steps: int, floor: float) -> float:
+    """1.0 (pure teacher forcing) through warmup, then linear decay to `floor` by the end of
+    training -- the probability that a given decoder-input position uses the true previous
+    token rather than the model's own prediction for it (scheduled sampling, Bengio et al.
+    2015). Training is otherwise 100% teacher-forced, so the model never practices recovering
+    from its own mistakes; every position at evaluation time is one it has never seen. This is
+    a training-time fix only -- the assignment mandates greedy decoding for every reported
+    metric, so it leaves evaluation untouched.
+
+    Waits for the same warmup the LR schedule uses: early in training the model's own
+    predictions are close to random, and mixing that noise into the supervision before it has
+    learned anything would corrupt training rather than toughen it.
+    """
+    if step < warmup_steps:
+        return 1.0
+    progress = min(1.0, (step - warmup_steps) / max(total_steps - warmup_steps, 1))
+    return 1.0 - progress * (1.0 - floor)
+
+
+def compute_loss(model_cfg, model, batch, label_smoothing: float, tf_prob: float = 1.0):
     """Teacher-forced forward pass. Returns (loss, supervised token count).
 
     Tokenized: target is <bos> w1..wn <eos>; feed all but the last, supervise all but the
     first, so position t predicts t+1. BLT shifts internally (patch stream by one patch, and
     bytes within each patch by one), so its logits already align with the raw target bytes.
+
+    `tf_prob < 1.0` (only ever passed while `model.training`; `evaluate_loss` leaves it at the
+    default) mixes in the model's own predictions: one extra no-grad forward pass gets them,
+    then some positions are swapped in at rate `1 - tf_prob` -- the standard parallelizable
+    approximation of scheduled sampling for a non-recurrent (Transformer) decoder, since a true
+    sequential mix would need one forward pass per position. For BLT this is one mix
+    (`ctx_bytes`) that feeds both the patch pooling driving the global decoder and the
+    within-patch local decoder, since both are exposure-bias points there; for the tokenized
+    models `<bos>` (position 0) is never replaced, since it has no "own prediction" to be
+    replaced with.
     """
     src, tgt = batch["src"], batch["tgt"]
     if model_cfg.is_blt:
-        logits, labels, ignore = model(src, tgt), tgt, ds.BYTE_PAD_ID
+        ctx = tgt
+        if model.training and tf_prob < 1.0:
+            with torch.no_grad():
+                own = model(src, tgt).argmax(-1)
+            replace = (torch.rand(tgt.shape, device=tgt.device) >= tf_prob) \
+                & (tgt != ds.BYTE_PAD_ID)
+            ctx = torch.where(replace, own, tgt)
+        logits, labels, ignore = model(src, tgt, ctx_bytes=ctx), tgt, ds.BYTE_PAD_ID
     else:
-        logits, labels, ignore = model(src, tgt[:, :-1]), tgt[:, 1:], ds.PAD_ID
+        tgt_in = tgt[:, :-1]
+        if model.training and tf_prob < 1.0 and tgt_in.size(1) > 1:
+            with torch.no_grad():
+                own = model(src, tgt_in).argmax(-1)
+            replace = torch.rand(tgt_in[:, 1:].shape, device=tgt_in.device) >= tf_prob
+            mixed = tgt_in.clone()
+            mixed[:, 1:] = torch.where(replace, own[:, :-1], tgt_in[:, 1:])
+            tgt_in = mixed
+        logits, labels, ignore = model(src, tgt_in), tgt[:, 1:], ds.PAD_ID
 
     loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), labels.reshape(-1),
                            ignore_index=ignore, label_smoothing=label_smoothing)
@@ -175,14 +220,17 @@ def compute_loss(model_cfg, model, batch, label_smoothing: float):
 
 
 def lr_lambda_factory(warmup_steps: int, total_steps: int):
-    """Linear warmup, then cosine decay to 75% of the peak.
+    """Linear warmup, then cosine decay to 10% of the peak.
 
-    The floor is deliberately shallow. Under a decay-to-10% schedule both losses were still
-    falling at the final epoch, so the run was ending while the model was still learning
-    rather than converging; a 75% floor keeps the late epochs at a useful rate.
+    The shallow 75% floor this replaces was chosen when the runs were still ending mid-descent
+    and a high late-epoch rate looked like the thing keeping them learning. It was not: the
+    losses plateaued high because the tokenization gave the model no aligned units to learn
+    from (see `dataset.py`), and a rate that never really came down just kept the late epochs
+    noisy. With the source now BPE over byte-boundary-respecting cipher symbols there are
+    real, character-aligned units to fit, which is what a decay to 10% is for.
     """
 
-    floor = 0.75
+    floor = 0.10
 
     def fn(step: int) -> float:
         if step < warmup_steps:
@@ -220,9 +268,10 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
     total_params, trainable = utils.count_parameters(model)
 
     steps_per_epoch = len(loaders["train"])
+    total_steps = steps_per_epoch * train_cfg.epochs
     optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda_factory(train_cfg.warmup_steps, steps_per_epoch * train_cfg.epochs))
+        optimizer, lr_lambda_factory(train_cfg.warmup_steps, total_steps))
 
     print(f"\n{'=' * 78}")
     print(f"Training {config_name}: pos={model_cfg.pos_encoding}, attn={model_cfg.attention}, "
@@ -238,7 +287,7 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
     # examples_per_sec is the honest cross-config throughput: a "token" is a BPE subword for
     # C1-C4 but a raw byte for C5, which would make C5 look artificially fast.
     history = {"train_loss": [], "val_loss": [], "epoch_seconds": [],
-               "examples_per_sec": [], "peak_memory_mb": [], "lr": []}
+               "examples_per_sec": [], "peak_memory_mb": [], "lr": [], "teacher_forcing": []}
     best_val, best_epoch, stale, global_step = float("inf"), -1, 0, 0
     ckpt_dir = CKPT_DIR / config_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -252,7 +301,10 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
         with utils.Timer() as epoch_timer:
             for batch in loaders["train"]:
                 batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-                loss, n_tokens = compute_loss(model_cfg, model, batch, train_cfg.label_smoothing)
+                tf_prob = teacher_forcing_prob(global_step, train_cfg.warmup_steps, total_steps,
+                                               train_cfg.scheduled_sampling_floor)
+                loss, n_tokens = compute_loss(model_cfg, model, batch, train_cfg.label_smoothing,
+                                              tf_prob)
                 loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clip)
                 optimizer.step()
@@ -269,7 +321,8 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
 
                 if run is not None and global_step % train_cfg.log_every == 0:
                     run.log({"train/loss_step": step_loss, "train/grad_norm": float(grad_norm),
-                             "train/lr": scheduler.get_last_lr()[0]}, step=global_step)
+                             "train/lr": scheduler.get_last_lr()[0],
+                             "train/teacher_forcing": tf_prob}, step=global_step)
                 if smoke_steps and global_step >= smoke_steps:
                     break
 
@@ -281,11 +334,11 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
         for key, value in [("train_loss", train_loss), ("val_loss", val_loss),
                            ("epoch_seconds", epoch_timer.elapsed),
                            ("examples_per_sec", ex_per_sec), ("peak_memory_mb", peak_mb),
-                           ("lr", scheduler.get_last_lr()[0])]:
+                           ("lr", scheduler.get_last_lr()[0]), ("teacher_forcing", tf_prob)]:
             history[key].append(value)
 
         print(f"  epoch {epoch:>2}/{train_cfg.epochs}  train {train_loss:.4f}  "
-              f"val {val_loss:.4f}  ppl {math.exp(min(val_loss, 20)):.2f}  "
+              f"val {val_loss:.4f}  ppl {math.exp(min(val_loss, 20)):.2f}  tf {tf_prob:.2f}  "
               f"{utils.human_time(epoch_timer.elapsed)}  {ex_per_sec:.0f} ex/s  {peak_mb:.0f} MiB")
 
         if run is not None:
@@ -441,32 +494,50 @@ def load_checkpoint(config_name: str, device: torch.device):
 
 @torch.no_grad()
 def decode_split(model, model_cfg, data, split, device, limit_lines=None):
-    """Greedily decode one split. Returns (predictions, pairs, stats)."""
+    """Greedily decode one split. Returns (predictions, pairs, stats).
+
+    The model decodes chunks (`data["loaders"][split]` is built from `chunk_pairs`), but
+    scoring happens at whole-line granularity: chunk predictions are regrouped by
+    `chunk_line_ids` and concatenated in order before being returned, one string per entry
+    of `pairs`.
+    """
     pairs = data["pairs"][split]
+    chunk_line_ids = data["chunk_line_ids"][split]
     loader = data["loaders"][split]
 
     if limit_lines is not None:
+        keep_ids = {p.line_id for p in pairs[:limit_lines]}
+        # Chunks of the same line are consecutive and in split order, same as `pairs`, so the
+        # kept lines' chunks are a contiguous prefix of chunk_line_ids.
+        cutoff = next((i for i, lid in enumerate(chunk_line_ids) if lid not in keep_ids),
+                     len(chunk_line_ids))
         pairs = pairs[:limit_lines]
+        chunk_line_ids = chunk_line_ids[:cutoff]
         loader = torch.utils.data.DataLoader(
-            torch.utils.data.Subset(data["datasets"][split], range(len(pairs))),
+            torch.utils.data.Subset(data["datasets"][split], range(cutoff)),
             # .batch_size is None when a loader was built with a batch_sampler.
             batch_size=loader.batch_size or TrainConfig().batch_size,
             shuffle=False, collate_fn=loader.collate_fn)
 
     meta = data["meta"]
-    predictions: list[str] = []
+    chunk_predictions: list[str] = []
     utils.reset_peak_memory()
     with utils.Timer() as timer:
         for batch in loader:
             src = batch["src"].to(device, non_blocking=True)
             if model_cfg.is_blt:
                 out = model.greedy_decode(src, max_bytes=meta["max_tgt_len"])
-                predictions.extend(bytes_to_text(row) for row in out.cpu())
+                chunk_predictions.extend(bytes_to_text(row) for row in out.cpu())
             else:
                 out = model.greedy_decode(src, max_len=meta["max_tgt_len"],
                                           bos_id=ds.BOS_ID, eos_id=ds.EOS_ID)
-                predictions.extend(ds.decode_plain(data["plain_tok"], row)
-                                   for row in out.cpu().tolist())
+                chunk_predictions.extend(ds.decode_plain(data["plain_tok"], row)
+                                         for row in out.cpu().tolist())
+
+    grouped: dict[int, list[str]] = {}
+    for line_id, pred in zip(chunk_line_ids, chunk_predictions):
+        grouped.setdefault(line_id, []).append(pred)
+    predictions = ["".join(grouped[p.line_id]) for p in pairs]
 
     return predictions, pairs, {"decode_seconds": timer.elapsed,
                                 "decode_peak_memory_mb": utils.peak_memory_mb()}
@@ -625,10 +696,17 @@ def main() -> None:
             setattr(train_cfg, attr, value)
 
     names = list(CONFIGS) if args.all else [args.config.upper()]
-    summaries = {name: train_one(name, train_cfg, device, use_wandb=not args.no_wandb,
-                                 smoke_steps=args.smoke_steps if args.smoke else 0,
-                                 push=args.push)
-                 for name in names}
+    summaries, results = {}, {}
+    for name in names:
+        summaries[name] = train_one(name, train_cfg, device, use_wandb=not args.no_wandb,
+                                    smoke_steps=args.smoke_steps if args.smoke else 0,
+                                    push=args.push)
+        if not args.smoke:
+            # Evaluate immediately so results.csv/json and the figures are current after
+            # every config, not just at the end of the whole run -- lets a run be judged (and
+            # stopped, if a config is clearly off) without waiting for --all to finish.
+            results[name] = evaluate_config(name, device, limit_lines=args.limit_lines)
+            write_results(results)
 
     if len(summaries) > 1:
         print("\n" + "=" * 78)
