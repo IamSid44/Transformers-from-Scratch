@@ -96,16 +96,17 @@ class TrainConfig:
     """Shared across all five configurations, so any difference is architectural."""
 
     epochs: int = 50
-    batch_size: int = 16
+    batch_size: int = 1024
     lr: float = 6e-4                       # Adam, linear warmup then cosine decay
-    warmup_steps: int = 250
+    warmup_epochs: float = 2               # converted to a step count in train_one, since
+                                            # steps_per_epoch depends on batch_size and corpus size
     grad_clip: float = 1.0
     label_smoothing: float = 0.1
     scheduled_sampling_floor: float = 0.7  # see teacher_forcing_prob
     early_stopping_patience: int = 5
     group_by_length: bool = True           # batch similar-length lines together
     num_workers: int = 0
-    log_every: int = 50
+    log_every: int = 10
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -269,9 +270,10 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
 
     steps_per_epoch = len(loaders["train"])
     total_steps = steps_per_epoch * train_cfg.epochs
+    warmup_steps = round(train_cfg.warmup_epochs * steps_per_epoch)
     optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda_factory(train_cfg.warmup_steps, total_steps))
+        optimizer, lr_lambda_factory(warmup_steps, total_steps))
 
     print(f"\n{'=' * 78}")
     print(f"Training {config_name}: pos={model_cfg.pos_encoding}, attn={model_cfg.attention}, "
@@ -279,6 +281,7 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
     print(f"  parameters      {total_params / 1e6:.2f}M ({trainable / 1e6:.2f}M trainable)")
     print(f"  train examples  {len(data['datasets']['train']):,}  "
           f"({steps_per_epoch} steps/epoch x {train_cfg.epochs} epochs)")
+    print(f"  warmup          {warmup_steps} steps ({train_cfg.warmup_epochs} epochs)")
     print(f"  device          {device}")
     print(f"{'=' * 78}")
 
@@ -301,7 +304,7 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
         with utils.Timer() as epoch_timer:
             for batch in loaders["train"]:
                 batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-                tf_prob = teacher_forcing_prob(global_step, train_cfg.warmup_steps, total_steps,
+                tf_prob = teacher_forcing_prob(global_step, warmup_steps, total_steps,
                                                train_cfg.scheduled_sampling_floor)
                 loss, n_tokens = compute_loss(model_cfg, model, batch, train_cfg.label_smoothing,
                                               tf_prob)

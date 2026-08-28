@@ -172,13 +172,21 @@ Identical across all five configurations, so any difference in the results is ar
 | `d_ff` | 2048 |
 | Heads `h` (`d_head`) | 8 (32) |
 | Dropout / label smoothing | 0.1 / 0.1 |
-| Batching | grouped by approximate length, batch size 16 |
+| Batching | grouped by approximate length, batch size 1024 |
 
 Parameter counts: **C1/C2 12.89M, C3 11.70M, C4 12.88M, C5 22.75M.**
 
-Optimisation: Adam at 6e-4 with 250 steps of linear warmup then cosine decay to **10% of the
-peak**, gradient clipping at 1.0, batch size 16, up to 50 epochs with early stopping (patience
+Optimisation: Adam at 6e-4 with 2 epochs of linear warmup then cosine decay to **10% of the
+peak**, gradient clipping at 1.0, batch size 1024, up to 50 epochs with early stopping (patience
 5 on validation loss). Training runs in plain fp32.
+
+Batch size moved from 16 to 1024 once chunking (§2) cut sequence lengths to 64 tokens: at 1024,
+C5 (the heaviest configuration) peaks at ~49 GB and processes ~2x the examples/second of
+batch 256, on a card with 75-80 GB free even alongside other jobs -- comfortably using the GPU
+`batch_size=16` (tuned for the old ~1,488-token sequences) left mostly idle. Warmup is 2 epochs
+rather than a fixed step count because `steps_per_epoch` now depends on batch size: at 1024
+that's 39 steps/epoch, so a fixed `warmup_steps=250` (right for the old ~2,480 steps/epoch)
+would have meant over 6 epochs of warmup instead of a small fraction of one.
 
 An earlier run used a 75% floor, on the reading that both losses still falling at the final
 epoch meant the schedule was winding down too early. That was the wrong diagnosis: the losses

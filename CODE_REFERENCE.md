@@ -477,9 +477,12 @@ shared grid-of-bars helper.
 BLT-only fields (`d_local`, `local_attn_window`, `ngram_buckets`, …) are ignored unless
 `tokenization == "blt"`. Properties: `is_blt`, `d_head`; `to_dict()` for serialization.
 
-**`TrainConfig`** — shared by *all five* configurations: 50 epochs, batch size 16, Adam at
-`lr=6e-4` with 250 warmup steps, gradient clipping at 1.0, label smoothing 0.1,
-`scheduled_sampling_floor=0.7`, early-stopping patience 5, length grouping on, `log_every=50`.
+**`TrainConfig`** — shared by *all five* configurations: 50 epochs, batch size 1024, Adam at
+`lr=6e-4` with `warmup_epochs=2` (converted to a step count in `train_one`, since
+`steps_per_epoch` depends on `batch_size` — fixing a raw step count would silently mean a
+different warmup fraction at a different batch size; 78 steps at the current batch size),
+gradient clipping at 1.0, label smoothing 0.1, `scheduled_sampling_floor=0.7`, early-stopping
+patience 5, length grouping on, `log_every=10`.
 No weight decay and no mixed precision — training is plain fp32.
 
 **`CONFIGS`** — C2–C5 are built from C1 with `dataclasses.replace`, changing exactly one named
