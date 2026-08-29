@@ -1,0 +1,35 @@
+Greedy decoding samples -- C4 (Normalization)
+====================================================================================================
+
+--- test line 3 (bit accuracy 74.16%, edit distance 53) ---
+GOLD: He had a recurring role in on two episodes of The Bill as character Connor Price In Boulter landed a role as Craig in the episode Teddy s Story of the television series The Long Firm he starred alongside actors Mark Strong and Derek Jacobi Boulter starred as Darren in the theatre productions of the Philip Ridley play Mercury Fur It was performed at the Drum Theatre in Plymouth and the Menier Choco
+PRED: He had a recurring role in on two episodes of The Bill as character Cinnor Priage In Boulter landed a role as Argig in the episodee Hedby s Story of the television series The Long Firm he stated alongside actors Mark Strong and Dergo Jackm Boulter starred as Darren in the theatre productions of the Philip Ridgely play Mercury Furt It was performed at the Urwi Thatre in Anymouth and the Menmer Chic
+
+--- test line 4 (bit accuracy 69.88%, edit distance 32) ---
+GOLD: In Boulter starred in the play Citizenship written by Mark Ravenhill The play was part of a series which featured different playwrights titled Burn Chatroom Citizenship In a interview fellow actor Ben Whishaw identified Boulter as one of his favorite co stars I loved working with a guy called Robert Boulter who was in the triple bill of Burn Chatroom and Citizenship at the National He played my br
+PRED: In Boulter started in the play Citizenship written by Mark Capenhill The play was part of a series which featured different playwrightts titled Burn Clarkson Citizenship In a interview fellow actor Ben Wishaw is identified Boulter as one of his favorite co stars I lived working with a guy called Robert Boulter who was in the triple bill of Surn Chatriom and Citizenship at the National He played my
+
+--- test line 13 (bit accuracy 87.93%, edit distance 16) ---
+GOLD: His father died around Du Fu would have been allowed to enter the civil service because of his father s rank but he is thought to have given up the privilege in favour of one of his half brothers He spent the next four years living in the Luoyang area fulfilling his duties in domestic affairs
+PRED: His father died around Du Fu would have been allowed to enter the civil service because of his father s crew but he is thought to have given up the provide in favour of one of his half brotherers He spent the next four years living in the Human area fulfilning his duries in domestic affairs
+
+--- test line 17 (bit accuracy 70.07%, edit distance 27) ---
+GOLD: The An Lushan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely itinerant life unsettled by wars associated famines and imperial displeasure Th
+PRED: The An Lusan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely withinerant life unsethed by wats associated defines and imperial displeasure Th
+
+--- test line 26 (bit accuracy 97.82%, edit distance 8) ---
+GOLD: Hung summarises his life by concluding that He appeared to be a filial son an affectionate father a generous brother a faithful husband a loyal friend a dutiful official and a patriotic subject
+PRED: Hung submarines his life by concluding that He appeared to be a filial son an affectionate father a generous brother a faithful husband a loyal friend a fixtful official and a patriotic subjectct
+
+--- test line 29 (bit accuracy 71.01%, edit distance 12) ---
+GOLD: Since the Song dynasty critics have called Du Fu the poet historian sh sh The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advice which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this is inf
+PRED: Since the Song dynasty critics have called Du Fu the poet historian she The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advice which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this informat
+
+--- test line 45 (bit accuracy 69.26%, edit distance 88) ---
+GOLD: Until the th century the Japanese preferred Bai Juyi above all poets and there were few references to Du Fu although his influence can be seen in some kanshi Chinese poetry made by Japanese poets anthologies such as Bunka Shreish in the th century The first notable Japanese appreciator of Du Fu s poetry was Kokan Shiren a Rinzai Zen patriarch and one of the most prominent authors of the literature
+PRED: Until the th century the Japanese preferred Back Guyi above all pogs and there were few references to Du Fu although his influence can be seen in some manship Chinese poetry made by Japanese poets anthologies such as Munka Shreish in the th century The first notable Japanese appreciator of Du Fu s poetry was Ioman Shoren a Pinkzai Den paratrich and one of the most prominent guitors of the literatu
+
+--- test line 53 (bit accuracy 98.74%, edit distance 9) ---
+GOLD: The song was included in the dancing game Just Dance and is also one of the select songs available on the demo version Additionally it is the final main track on the US edition of Now That s What I Call Music
+PRED: The song was included in the banning game Just Bance and is also one of the sellet songs available on the demo version Additionally it is the final main track on the US edition of New Year s What I Call Music
+
