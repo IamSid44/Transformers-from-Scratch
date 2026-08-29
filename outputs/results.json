@@ -98,30 +98,5 @@
     "decode_seconds": 25.833973326007253,
     "decode_ms_per_line": 51.66794665201451,
     "inference_peak_memory_mb": 990.21142578125
-  },
-  "C5": {
-    "bit_accuracy": 66.79304338222744,
-    "char_accuracy": 9.157354698151662,
-    "sequence_accuracy": 0.0,
-    "levenshtein_mean": 437.426,
-    "levenshtein_normalized": 0.7886059119236817,
-    "bleu": 0.00620540713895855,
-    "rouge1": 5.244202600077473,
-    "rouge2": 0.0011363636363636363,
-    "rougeL": 5.244202600077473,
-    "levenshtein_mean_lib": 437.426,
-    "levenshtein_normalized_lib": 0.7886059119236817,
-    "rouge1_lib": 6.211030372023162,
-    "rouge2_lib": 0.004674233346901568,
-    "rougeL_lib": 6.211030372023162,
-    "config": "C5",
-    "changed_from_base": "Tokenization",
-    "params_millions": 22.753283,
-    "best_val_loss": 1.9525147711070894,
-    "best_epoch": 28,
-    "n_test_lines": 500,
-    "decode_seconds": 61.20308667200152,
-    "decode_ms_per_line": 122.40617334400304,
-    "inference_peak_memory_mb": 5743.79736328125
   }
 }

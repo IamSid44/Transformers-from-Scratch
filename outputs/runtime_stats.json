@@ -42,16 +42,5 @@
     "best_val_loss": 0.42420012638013155,
     "decode_ms_per_line": 51.66794665201451,
     "inference_peak_memory_mb": 990.21142578125
-  },
-  "C5": {
-    "params_millions": 22.753283,
-    "peak_memory_mb": 48694.7802734375,
-    "sec_per_epoch": 178.18759141190975,
-    "examples_per_sec": 222.8508364823484,
-    "epochs_run": 33,
-    "wall_seconds": 6410.693129801992,
-    "best_val_loss": 1.9525147711070894,
-    "decode_ms_per_line": 122.40617334400304,
-    "inference_peak_memory_mb": 5743.79736328125
   }
 }

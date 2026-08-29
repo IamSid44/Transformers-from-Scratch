@@ -169,7 +169,9 @@ tuple of sources and a tuple of targets, then pads each side to **that batch's o
 sequence** with `PAD_ID`. Padding to the global cap instead would waste most of the compute.
 
 **`CollateBytes`** does the same for C5 but rounds up to a whole multiple of the patch size
-(`SRC_PATCH_SIZE=16`, `TGT_PATCH_SIZE=8`), so the patch grid is rectangular.
+(`SRC_PATCH_SIZE=32`, `TGT_PATCH_SIZE=4`), so the patch grid is rectangular. The two are
+locked together as `SRC_PATCH_SIZE = BITS_PER_CHAR * TGT_PATCH_SIZE` so a source patch and a
+target patch cover the same four characters -- see [BLT.md](BLT.md).
 
 Both return `{"src": (B, S), "tgt": (B, T)}`.
 
@@ -382,7 +384,7 @@ dominates evaluation wall time. Ids → text via `ds.decode_plain` (stop at `<eo
 specials).
 
 **BLT** — patch by patch: one global decoder step produces latent `h_t`, then the local decoder
-emits `TGT_PATCH_SIZE = 8` bytes autoregressively within that patch. Bytes generated so far are
+emits `TGT_PATCH_SIZE = 4` bytes autoregressively within that patch. Bytes generated so far are
 re-encoded and re-pooled exactly as in training, so inference matches the training computation.
 Control symbols other than EOS are replaced with a space. Bytes → text via `bytes_to_text`.
 

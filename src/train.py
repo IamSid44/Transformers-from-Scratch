@@ -243,6 +243,43 @@ def lr_lambda_factory(warmup_steps: int, total_steps: int):
 
 
 @torch.no_grad()
+def source_dependence(model_cfg, model, loader, device, max_batches: int = 2) -> float:
+    """Teacher-forced accuracy with each example's own source, minus the same with the batch's
+    sources rotated by one. In percentage points.
+
+    Validation loss cannot see the failure this catches. A sequence-to-sequence model that
+    never learns to read its encoder still drives cross-entropy down a long way by modelling
+    the target language alone -- and then, at greedy decoding time, emits the same fluent
+    string for every input. C5's first run did exactly that: it plateaued at 1.9525 nats/byte,
+    which a source-blind character n-gram with the same receptive field reaches at 1.9721, and
+    every test line decoded to " the sea the sea ...". This number was 0.25 points there and
+    would have said so by epoch 3. Reported for all five configurations, since nothing about
+    the trap is specific to BLT.
+    """
+    model.eval()
+    hit = hit_rolled = counted = 0
+    for i, batch in enumerate(loader):
+        if i >= max_batches:
+            break
+        src, tgt = (batch[k].to(device, non_blocking=True) for k in ("src", "tgt"))
+        if src.size(0) < 2:
+            continue
+        rolled = torch.roll(src, 1, 0)
+        if model_cfg.is_blt:
+            labels, ignore = tgt, ds.BYTE_PAD_ID
+            real, wrong = model(src, tgt), model(rolled, tgt)
+        else:
+            labels, ignore = tgt[:, 1:], ds.PAD_ID
+            real, wrong = model(src, tgt[:, :-1]), model(rolled, tgt[:, :-1])
+        keep = labels != ignore
+        hit += int((real.argmax(-1)[keep] == labels[keep]).sum())
+        hit_rolled += int((wrong.argmax(-1)[keep] == labels[keep]).sum())
+        counted += int(keep.sum())
+    model.train()
+    return 100.0 * (hit - hit_rolled) / max(counted, 1)
+
+
+@torch.no_grad()
 def evaluate_loss(model_cfg, model, loader, device) -> float:
     """Token-weighted mean cross-entropy, no label smoothing, so it is a true likelihood."""
     model.eval()
@@ -290,7 +327,8 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
     # examples_per_sec is the honest cross-config throughput: a "token" is a BPE subword for
     # C1-C4 but a raw byte for C5, which would make C5 look artificially fast.
     history = {"train_loss": [], "val_loss": [], "epoch_seconds": [],
-               "examples_per_sec": [], "peak_memory_mb": [], "lr": [], "teacher_forcing": []}
+               "examples_per_sec": [], "peak_memory_mb": [], "lr": [], "teacher_forcing": [],
+               "source_gap": []}
     best_val, best_epoch, stale, global_step = float("inf"), -1, 0, 0
     ckpt_dir = CKPT_DIR / config_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -331,22 +369,26 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
 
         train_loss = epoch_loss / max(epoch_tokens, 1)
         val_loss = evaluate_loss(model_cfg, model, loaders["val"], device)
+        src_gap = source_dependence(model_cfg, model, loaders["val"], device)
         peak_mb = utils.peak_memory_mb()
         ex_per_sec = epoch_examples / max(epoch_timer.elapsed, 1e-6)
 
         for key, value in [("train_loss", train_loss), ("val_loss", val_loss),
                            ("epoch_seconds", epoch_timer.elapsed),
                            ("examples_per_sec", ex_per_sec), ("peak_memory_mb", peak_mb),
-                           ("lr", scheduler.get_last_lr()[0]), ("teacher_forcing", tf_prob)]:
+                           ("lr", scheduler.get_last_lr()[0]), ("teacher_forcing", tf_prob),
+                           ("source_gap", src_gap)]:
             history[key].append(value)
 
         print(f"  epoch {epoch:>2}/{train_cfg.epochs}  train {train_loss:.4f}  "
               f"val {val_loss:.4f}  ppl {math.exp(min(val_loss, 20)):.2f}  tf {tf_prob:.2f}  "
+              f"src {src_gap:+.1f}pt  "
               f"{utils.human_time(epoch_timer.elapsed)}  {ex_per_sec:.0f} ex/s  {peak_mb:.0f} MiB")
 
         if run is not None:
             run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss,
                      "val/perplexity": math.exp(min(val_loss, 20)),
+                     "val/source_gap": src_gap,
                      "perf/epoch_seconds": epoch_timer.elapsed,
                      "perf/examples_per_sec": ex_per_sec,
                      "perf/peak_memory_mb": peak_mb}, step=global_step)
@@ -601,8 +643,27 @@ METRIC_COLUMNS = [
 
 
 def write_results(results: dict[str, dict]) -> None:
-    """Write results.csv / results.json / runtime_stats.json and regenerate the figures."""
+    """Write results.csv / results.json / runtime_stats.json and regenerate the figures.
+
+    Configurations this run did not touch are carried over from the existing results.json
+    rather than dropped. These four files (and the three figures) are the only outputs shared
+    by all five configurations, so rewriting them from a single-config run would delete the
+    other four's numbers and redraw every chart with one line on it -- retraining one
+    configuration would silently invalidate the rest of the ablation. Per-configuration
+    outputs (`history_<C>.json`, `samples_<C>.txt`, `checkpoints/<C>/`) are already private to
+    their own run and need no such care.
+
+    Delete outputs/results.json first if you want a genuinely clean set.
+    """
     ds.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    previous = ds.OUTPUT_DIR / "results.json"
+    if previous.exists():
+        carried = json.loads(previous.read_text(encoding="utf-8"))
+        kept = sorted(set(carried) - set(results))
+        if kept:
+            print(f"[results] carrying over {', '.join(kept)} from the previous run")
+        results = {**carried, **results}
+
     with (ds.OUTPUT_DIR / "results.csv").open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=METRIC_COLUMNS, extrasaction="ignore")
         writer.writeheader()

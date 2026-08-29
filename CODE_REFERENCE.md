@@ -329,8 +329,10 @@ assignment permits. Hash n-gram byte embeddings and the local/global/local struc
 
 `BYTE_PAD_ID=256`, `BYTE_EOS_ID=257`, `BYTE_PATCH_START_ID=258`, `BYTE_VOCAB_SIZE=259`.
 Control ids sit *above* 255 so a raw byte's id is its own numeric value — no offset arithmetic
-anywhere. `SRC_PATCH_SIZE=16` (16 cipher bits = 2 characters per source patch),
-`TGT_PATCH_SIZE=8` (8 plaintext bytes per target patch).
+anywhere. `TGT_PATCH_SIZE=4` (4 plaintext characters per target patch) and
+`SRC_PATCH_SIZE = BITS_PER_CHAR * TGT_PATCH_SIZE = 32` (the same 4 characters, as 32 cipher
+characters), so the two patch grids cover the same span of text and source patch *k* lines up
+with target patch *k*. See [BLT.md](BLT.md) for why that is load-bearing.
 
 ### Components
 
@@ -363,7 +365,7 @@ residual (over valid bytes only) keeps the output sensible before attention has 
 anything. The patch axis is folded into the batch axis so every patch pools independently.
 Returns `(patches (B, N, d_model), patch_valid (B, N))`.
 
-**`LocalByteDecoder(cfg, patch_size, byte_embed)`**
+**`LocalByteDecoder(cfg, patch_size, byte_embed, max_len=4096)`**
 Generates one patch's bytes autoregressively from that patch's global latent `h_t`. Two design
 details, both found empirically:
 

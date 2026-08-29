@@ -322,16 +322,24 @@ because the encoder states it attends to were themselves built with RoPE.
 
 ### BLT (C5)
 
+Full walkthrough, including what the first implementation of this got wrong and how it was
+measured, in **[BLT.md](BLT.md)**.
+
 ```
-source bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 16)
-target bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 8)
+source bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 32)
+target bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 4)
                               GlobalTransformer  (the same class as C1, in latent mode)
                               patch latents --LocalByteDecoder--> byte logits
 ```
 
-A mean line is 4,827 source bytes → 302 source patches and 604 target bytes → 76 target
-patches.
-
+- **The two patch grids cover the same span of text.** `SRC_PATCH_SIZE = BITS_PER_CHAR *
+  TGT_PATCH_SIZE` — the corpus spends 8 cipher characters on each plaintext character, so a
+  source patch has to be 8× longer to hold the same 4 characters as a target patch. A
+  64-character chunk becomes 16 source patches and 17 target patches (the last holds `<eos>`),
+  source patch *k* and target patch *k* describe the same characters, and the global
+  transformer's sinusoidal table gives them the same positional vector — so the alignment
+  cross-attention has to learn is the identity. Choosing the two strides independently is what
+  made the first run collapse; see [BLT.md §3–4](BLT.md).
 - **Byte embeddings** are a 259-entry table plus hashed byte n-gram embeddings (n = 3, 4),
   with backward-looking windows. Bucket counts are sized per side: 8,192 on the target
   (English, ~148k possible 3-grams) but only 512 on the source, whose alphabet is `{0,1}`
@@ -346,6 +354,14 @@ patches.
 - **Patching is fixed-size**, not entropy-driven. The BLT paper trains a separate byte-level
   LM to place patch boundaries at entropy spikes; the assignment asks for a *simplified* BLT,
   and fixed strides keep the patch grid rectangular and batchable.
+- **Byte embeddings are scaled by √`d_local`** before the sinusoidal table is added, the same
+  rule `Seq2SeqTransformer._prepare` applies for C1–C4. A sinusoidal row has norm √(d/2) ≈
+  11.3 and a fresh embedding has norm ≈ 0.55, so without it the byte identity is under 5% of
+  the vector the first layer sees — and on the source side a byte carries a single bit.
+- **The local byte decoder's queries carry sinusoidal absolute byte position**, not just a
+  within-patch slot code: its cross-attention has to name a source patch, and an index it can
+  only reach through the latent is a deadlock (the latent is informative only once the query
+  works). This is also what Table 1's "Sinusoidal Absolute" requires of C5.
 - **The global transformer is literally `Seq2SeqTransformer` in latent mode** — same depth,
   width, sinusoidal encoding, MHA and LayerNorm as C1. Only the representation layer differs.
 
