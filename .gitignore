@@ -6,4 +6,6 @@ __pycache__/
 *.egg-info/
 *_assignment1.zip
 archive/
-.venv/
+.venv/logs/
+2023102040_assignment1/
+*.zip

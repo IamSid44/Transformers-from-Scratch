@@ -1,243 +1,0 @@
-GPU: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (102.0 GB)
-
-==============================================================================
-Training C1: pos=sinusoidal, attn=mha, norm=layernorm, tokenization=bpe
-  parameters      12.89M (12.89M trainable)
-  train examples  77,373  (303 steps/epoch x 40 epochs)
-  warmup          303 steps (1 epochs)
-  device          cuda
-==============================================================================
-wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
-wandb: Currently logged in as: iamsid44 (iamsid44-iiit-hyderabad) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
-wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
-wandb: setting up run ykhjp07w
-wandb: Tracking run with wandb version 0.28.2
-wandb: Run data is saved locally in /scratch/shlok/Temp/Transformers-from-Scratch/wandb/run-20260902_155832-ykhjp07w
-wandb: Run `wandb offline` to turn off syncing.
-wandb: Syncing run C1
-wandb: ⭐️ View project at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040
-wandb: 🚀 View run at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040/runs/ykhjp07w
-  epoch  1/40  train 6.8975  val 5.8671  ppl 353.21  tf 1.00  src +6.0pt  5m20s  241 ex/s  2949 MiB
-  epoch  2/40  train 5.5003  val 3.9779  ppl 53.41  tf 1.00  src +28.1pt  5m08s  251 ex/s  2949 MiB
-  epoch  3/40  train 4.0437  val 2.2458  ppl 9.45  tf 1.00  src +50.1pt  4m52s  265 ex/s  2949 MiB
-  epoch  4/40  train 2.9297  val 1.2725  ppl 3.57  tf 1.00  src +67.9pt  5m13s  247 ex/s  2949 MiB
-  epoch  5/40  train 2.2908  val 0.7976  ppl 2.22  tf 1.00  src +77.8pt  5m11s  249 ex/s  2949 MiB
-  epoch  6/40  train 1.9678  val 0.5506  ppl 1.73  tf 1.00  src +83.0pt  5m07s  252 ex/s  2949 MiB
-  epoch  7/40  train 1.7791  val 0.4246  ppl 1.53  tf 1.00  src +86.1pt  5m09s  250 ex/s  2949 MiB
-  epoch  8/40  train 1.6551  val 0.3168  ppl 1.37  tf 1.00  src +88.9pt  5m14s  246 ex/s  2949 MiB
-  epoch  9/40  train 1.5685  val 0.2724  ppl 1.31  tf 1.00  src +90.4pt  5m07s  251 ex/s  2949 MiB
-  epoch 10/40  train 1.5101  val 0.2355  ppl 1.27  tf 1.00  src +90.5pt  5m02s  255 ex/s  2949 MiB
-  epoch 11/40  train 1.4652  val 0.2099  ppl 1.23  tf 1.00  src +91.1pt  5m06s  252 ex/s  2949 MiB
-  epoch 12/40  train 1.4303  val 0.1887  ppl 1.21  tf 1.00  src +91.3pt  5m05s  253 ex/s  2949 MiB
-  epoch 13/40  train 1.4007  val 0.1760  ppl 1.19  tf 1.00  src +91.3pt  5m08s  251 ex/s  2949 MiB
-  epoch 14/40  train 1.3788  val 0.1612  ppl 1.17  tf 1.00  src +92.8pt  4m57s  260 ex/s  2949 MiB
-  epoch 15/40  train 1.3593  val 0.1496  ppl 1.16  tf 1.00  src +92.7pt  4m58s  259 ex/s  2949 MiB
-  epoch 16/40  train 1.3468  val 0.1435  ppl 1.15  tf 1.00  src +93.0pt  4m51s  266 ex/s  2949 MiB
-  epoch 17/40  train 1.3273  val 0.1336  ppl 1.14  tf 1.00  src +92.9pt  5m07s  252 ex/s  2949 MiB
-  epoch 18/40  train 1.3166  val 0.1312  ppl 1.14  tf 1.00  src +92.6pt  5m12s  247 ex/s  2949 MiB
-  epoch 19/40  train 1.3071  val 0.1290  ppl 1.14  tf 1.00  src +93.1pt  5m08s  251 ex/s  2949 MiB
-  epoch 20/40  train 1.2965  val 0.1247  ppl 1.13  tf 1.00  src +93.4pt  5m16s  244 ex/s  2949 MiB
-  epoch 21/40  train 1.2898  val 0.1205  ppl 1.13  tf 1.00  src +93.0pt  5m04s  254 ex/s  2949 MiB
-  epoch 22/40  train 1.2821  val 0.1158  ppl 1.12  tf 1.00  src +93.5pt  5m05s  254 ex/s  2949 MiB
-  epoch 23/40  train 1.2753  val 0.1151  ppl 1.12  tf 1.00  src +93.7pt  5m09s  250 ex/s  2949 MiB
-  epoch 24/40  train 1.2702  val 0.1139  ppl 1.12  tf 1.00  src +93.3pt  5m08s  251 ex/s  2949 MiB
-  epoch 25/40  train 1.2644  val 0.1111  ppl 1.12  tf 1.00  src +93.5pt  5m09s  250 ex/s  2949 MiB
-  epoch 26/40  train 1.2602  val 0.1099  ppl 1.12  tf 1.00  src +93.2pt  5m09s  250 ex/s  2949 MiB
-  epoch 27/40  train 1.2562  val 0.1114  ppl 1.12  tf 1.00  src +93.4pt  5m09s  250 ex/s  2949 MiB
-  epoch 28/40  train 1.2543  val 0.1077  ppl 1.11  tf 1.00  src +93.8pt  4m59s  258 ex/s  2949 MiB
-  epoch 29/40  train 1.2486  val 0.1056  ppl 1.11  tf 1.00  src +94.0pt  5m08s  251 ex/s  2949 MiB
-  epoch 30/40  train 1.2458  val 0.1049  ppl 1.11  tf 1.00  src +94.2pt  4m59s  258 ex/s  2949 MiB
-  epoch 31/40  train 1.2431  val 0.1029  ppl 1.11  tf 1.00  src +93.7pt  5m14s  246 ex/s  2949 MiB
-  epoch 32/40  train 1.2406  val 0.1032  ppl 1.11  tf 1.00  src +94.0pt  5m06s  252 ex/s  2949 MiB
-  epoch 33/40  train 1.2387  val 0.1027  ppl 1.11  tf 1.00  src +93.4pt  5m01s  257 ex/s  2949 MiB
-  epoch 34/40  train 1.2369  val 0.1018  ppl 1.11  tf 1.00  src +93.2pt  4m58s  259 ex/s  2949 MiB
-  epoch 35/40  train 1.2352  val 0.1014  ppl 1.11  tf 1.00  src +93.6pt  5m04s  254 ex/s  2949 MiB
-  epoch 36/40  train 1.2340  val 0.1015  ppl 1.11  tf 1.00  src +93.8pt  4m50s  266 ex/s  2949 MiB
-  epoch 37/40  train 1.2324  val 0.1013  ppl 1.11  tf 1.00  src +93.9pt  5m04s  254 ex/s  2949 MiB
-  epoch 38/40  train 1.2316  val 0.1012  ppl 1.11  tf 1.00  src +93.3pt  4m54s  263 ex/s  2949 MiB
-  epoch 39/40  train 1.2304  val 0.1010  ppl 1.11  tf 1.00  src +93.8pt  4m47s  269 ex/s  2949 MiB
-  epoch 40/40  train 1.2297  val 0.1011  ppl 1.11  tf 1.00  src +93.6pt  4m44s  272 ex/s  2949 MiB
-  done in 3h34m55s; best val 0.1010 @ epoch 39
-wandb: updating run metadata
-wandb: uploading wandb-summary.json; uploading config.yaml; uploading output.log
-wandb: uploading wandb-summary.json; uploading output.log
-wandb: uploading history steps 1247-1247, summary, console lines 39-40
-wandb: 
-wandb: Run history:
-wandb:                 epoch ▁▁▁▂▂▂▂▂▂▃▃▃▃▃▄▄▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▇▇▇▇▇▇███
-wandb:    perf/epoch_seconds █▆▂▆▆▅▆▇▅▄▅▅▆▃▄▂▅▆▆▇▅▅▆▆▆▆▆▄▆▄▇▅▄▄▅▂▅▃▂▁
-wandb: perf/examples_per_sec ▁▃▆▂▃▃▃▂▃▄▄▄▃▅▅▇▃▂▃▂▄▄▃▃▃▃▃▅▃▅▂▄▅▅▄▇▄▆▇█
-wandb:   perf/peak_memory_mb █▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-wandb:       train/grad_norm █▇▇▄▆▃▃▃▃▂▃▃▂▂▃▁▂▂▂▁▁▁▂▁▁▁▂▁▂▁▁▁▁▁▁▁▁▁▁▁
-wandb:            train/loss █▆▄▃▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-wandb:       train/loss_step ██▅▅▄▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-wandb:              train/lr ▄████▇▇▇▇▇▆▆▆▆▅▅▅▅▅▅▄▄▃▃▃▃▃▃▂▂▂▁▁▁▁▁▁▁▁▁
-wandb: train/teacher_forcing ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-wandb:              val/loss █▆▄▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
-wandb:                    +2 ...
-wandb: 
-wandb: Run summary:
-wandb:         best_epoch 39
-wandb:      best_val_loss 0.10104
-wandb:             config C1
-wandb:              epoch 40
-wandb:         epochs_run 40
-wandb:   examples_per_sec 253.9719
-wandb:             params 12887040
-wandb:    params_millions 12.88704
-wandb:     peak_memory_mb 2949.00342
-wandb: perf/epoch_seconds 284.86309
-wandb:                +12 ...
-wandb: 
-wandb: 🚀 View run C1 at: https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040/runs/ykhjp07w
-wandb: ⭐️ View project at: https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040
-wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
-wandb: Find logs at: ./wandb/run-20260902_155832-ykhjp07w/logs
-Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
-New Data Upload               : |          |  0.00B /  0.00B            [A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[AProcessing Files (0 / 1)      :   1%|          |  559kB / 51.6MB, 47.0kB/s  
-New Data Upload               :   1%|          |  559kB / 51.6MB, 47.0kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   1%|          |  559kB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   2%|▏         | 1.12MB / 51.6MB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 1.12MB / 51.6MB, 90.6kB/s  
-New Data Upload               :   2%|▏         | 1.12MB / 51.6MB, 90.6kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:   2%|▏         | 1.12MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   3%|▎         | 1.68MB / 51.6MB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 1.68MB / 51.6MB,  135kB/s  
-New Data Upload               :   3%|▎         | 1.68MB / 51.6MB,  135kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:   5%|▌         | 2.79MB / 51.6MB            [A[AProcessing Files (0 / 1)      :   5%|▌         | 2.79MB / 51.6MB,  226kB/s  
-New Data Upload               :   5%|▌         | 2.79MB / 51.6MB,  226kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:   5%|▌         | 2.79MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   9%|▊         | 4.47MB / 51.6MB            [A[AProcessing Files (0 / 1)      :   9%|▊         | 4.47MB / 51.6MB,  361kB/s  
-New Data Upload               :   9%|▊         | 4.47MB / 51.6MB,  361kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:   9%|▊         | 4.47MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   9%|▊         | 4.47MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:   9%|▊         | 4.47MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  15%|█▌        | 7.82MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  15%|█▌        | 7.82MB / 51.6MB,  623kB/s  
-New Data Upload               :  15%|█▌        | 7.82MB / 51.6MB,  623kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  15%|█▌        | 7.82MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  16%|█▌        | 8.38MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  16%|█▌        | 8.38MB / 51.6MB,  658kB/s  
-New Data Upload               :  16%|█▌        | 8.38MB / 51.6MB,  658kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  22%|██▏       | 11.2MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  22%|██▏       | 11.2MB / 51.6MB,  880kB/s  
-New Data Upload               :  22%|██▏       | 11.2MB / 51.6MB,  880kB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  22%|██▏       | 11.2MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  26%|██▌       | 13.4MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  26%|██▌       | 13.4MB / 51.6MB, 1.05MB/s  
-New Data Upload               :  26%|██▌       | 13.4MB / 51.6MB, 1.05MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  26%|██▌       | 13.4MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  27%|██▋       | 14.0MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  27%|██▋       | 14.0MB / 51.6MB, 1.07MB/s  
-New Data Upload               :  27%|██▋       | 14.0MB / 51.6MB, 1.07MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  32%|███▏      | 16.8MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  32%|███▏      | 16.8MB / 51.6MB, 1.29MB/s  
-New Data Upload               :  32%|███▏      | 16.8MB / 51.6MB, 1.29MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  32%|███▏      | 16.8MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  41%|████      | 21.2MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  41%|████      | 21.2MB / 51.6MB, 1.63MB/s  
-New Data Upload               :  41%|████      | 21.2MB / 51.6MB, 1.63MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  41%|████      | 21.2MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  42%|████▏     | 21.8MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     | 21.8MB / 51.6MB, 1.65MB/s  
-New Data Upload               :  42%|████▏     | 21.8MB / 51.6MB, 1.65MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  49%|████▊     | 25.1MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  49%|████▊     | 25.1MB / 51.6MB, 1.90MB/s  
-New Data Upload               :  49%|████▊     | 25.1MB / 51.6MB, 1.90MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  49%|████▊     | 25.1MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  57%|█████▋    | 29.6MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    | 29.6MB / 51.6MB, 2.23MB/s  
-New Data Upload               :  57%|█████▋    | 29.6MB / 51.6MB, 2.23MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  57%|█████▋    | 29.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  58%|█████▊    | 30.2MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    | 30.2MB / 51.6MB, 2.24MB/s  
-New Data Upload               :  58%|█████▊    | 30.2MB / 51.6MB, 2.24MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  65%|██████▍   | 33.5MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  65%|██████▍   | 33.5MB / 51.6MB, 2.49MB/s  
-New Data Upload               :  65%|██████▍   | 33.5MB / 51.6MB, 2.49MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  65%|██████▍   | 33.5MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  74%|███████▎  | 38.0MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  74%|███████▎  | 38.0MB / 51.6MB, 2.80MB/s  
-New Data Upload               :  74%|███████▎  | 38.0MB / 51.6MB, 2.80MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  74%|███████▎  | 38.0MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  76%|███████▌  | 39.1MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  76%|███████▌  | 39.1MB / 51.6MB, 2.84MB/s  
-New Data Upload               :  76%|███████▌  | 39.1MB / 51.6MB, 2.84MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  82%|████████▏ | 42.5MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 42.5MB / 51.6MB, 3.08MB/s  
-New Data Upload               :  82%|████████▏ | 42.5MB / 51.6MB, 3.08MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  82%|████████▏ | 42.5MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  90%|████████▉ | 46.4MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 46.4MB / 51.6MB, 3.34MB/s  
-New Data Upload               :  90%|████████▉ | 46.4MB / 51.6MB, 3.34MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  90%|████████▉ | 46.4MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt:  92%|█████████▏| 47.5MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 47.5MB / 51.6MB, 3.37MB/s  
-New Data Upload               :  92%|█████████▏| 47.5MB / 51.6MB, 3.37MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  99%|█████████▊| 50.8MB / 51.6MB            [A[AProcessing Files (0 / 1)      :  99%|█████████▊| 50.8MB / 51.6MB, 3.61MB/s  
-New Data Upload               :  99%|█████████▊| 50.8MB / 51.6MB, 3.61MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt:  99%|█████████▊| 50.8MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 51.6MB / 51.6MB, 3.60MB/s  
-New Data Upload               : 100%|█████████▉| 51.6MB / 51.6MB, 3.60MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|█████████▉| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|██████████| 51.6MB / 51.6MB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 51.6MB / 51.6MB, 3.34MB/s  
-New Data Upload               : 100%|██████████| 51.6MB / 51.6MB, 3.34MB/s  [A
-
-  ...ts/checkpoints/C1/best.pt: 100%|██████████| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|██████████| 51.6MB / 51.6MB            [A[A
-
-  ...ts/checkpoints/C1/best.pt: 100%|██████████| 51.6MB / 51.6MB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 51.6MB / 51.6MB, 3.26MB/s  
-New Data Upload               : 100%|██████████| 51.6MB / 51.6MB, 3.26MB/s  
-  ...ts/checkpoints/C1/best.pt: 100%|██████████| 51.6MB / 51.6MB            
-  [hf] uploaded -> https://huggingface.co/siddarthg44/anlp-a1-2023102040-C1

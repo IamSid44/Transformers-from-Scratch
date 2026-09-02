@@ -1,277 +1,0 @@
-epoch 20 complete at Wed Sep  2 09:43:08 PM IST 2026
---- C5 training stopped; GPU 1 processes now: ---
-
---- rebuilding history_C5.json from the log ---
-recovered 20 epochs from /scratch/shlok/Temp/Transformers-from-Scratch/logs/train_C5.log -> /scratch/shlok/Temp/Transformers-from-Scratch/outputs/history_C5.json
-  best val 0.1212 @ epoch 20; 962s/epoch; final source gap +79.2pt
-
---- pushing C5 checkpoint to HuggingFace ---
-Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
-New Data Upload               : |          |  0.00B /  0.00B            [A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[AProcessing Files (0 / 1)      :   1%|          |  554kB /  107MB, 45.6kB/s  
-New Data Upload               :   1%|          |  554kB / 67.1MB, 45.6kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   1%|          |  554kB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   2%|▏         | 1.66MB /  107MB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 1.66MB /  107MB,  132kB/s  
-New Data Upload               :   2%|▏         | 1.66MB /  107MB,  132kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   2%|▏         | 1.66MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   2%|▏         | 1.66MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   3%|▎         | 3.33MB /  107MB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 3.33MB /  107MB,  263kB/s  
-New Data Upload               :   3%|▎         | 3.33MB /  107MB,  263kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   3%|▎         | 3.33MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   4%|▍         | 4.44MB /  107MB            [A[AProcessing Files (0 / 1)      :   4%|▍         | 4.44MB /  107MB,  348kB/s  
-New Data Upload               :   4%|▍         | 4.44MB /  107MB,  348kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   5%|▌         | 5.54MB /  107MB            [A[AProcessing Files (0 / 1)      :   5%|▌         | 5.54MB /  107MB,  434kB/s  
-New Data Upload               :   5%|▌         | 5.54MB /  107MB,  434kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   5%|▌         | 5.54MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   7%|▋         | 7.76MB /  107MB            [A[AProcessing Files (0 / 1)      :   7%|▋         | 7.76MB /  107MB,  604kB/s  
-New Data Upload               :   7%|▋         | 7.76MB /  107MB,  604kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:   7%|▋         | 7.76MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:   9%|▉         | 9.98MB /  107MB            [A[AProcessing Files (0 / 1)      :   9%|▉         | 9.98MB /  107MB,  772kB/s  
-New Data Upload               :   9%|▉         | 9.98MB /  107MB,  772kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  11%|█         | 11.6MB /  107MB            [A[AProcessing Files (0 / 1)      :  11%|█         | 11.6MB /  107MB,  898kB/s  
-New Data Upload               :  11%|█         | 11.6MB /  107MB,  898kB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  11%|█         | 11.6MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  15%|█▌        | 16.1MB /  107MB            [A[AProcessing Files (0 / 1)      :  15%|█▌        | 16.1MB /  107MB, 1.24MB/s  
-New Data Upload               :  15%|█▌        | 16.1MB /  107MB, 1.24MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  15%|█▌        | 16.1MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  16%|█▌        | 16.6MB /  107MB            [A[AProcessing Files (0 / 1)      :  16%|█▌        | 16.6MB /  107MB, 1.26MB/s  
-New Data Upload               :  16%|█▌        | 16.6MB /  107MB, 1.26MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  19%|█▉        | 20.5MB /  107MB            [A[AProcessing Files (0 / 1)      :  19%|█▉        | 20.5MB /  107MB, 1.56MB/s  
-New Data Upload               :  19%|█▉        | 20.5MB /  107MB, 1.56MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  19%|█▉        | 20.5MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  23%|██▎       | 24.9MB /  107MB            [A[AProcessing Files (0 / 1)      :  23%|██▎       | 24.9MB /  107MB, 1.88MB/s  
-New Data Upload               :  23%|██▎       | 24.9MB /  107MB, 1.88MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  23%|██▎       | 24.9MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  23%|██▎       | 24.9MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  28%|██▊       | 29.4MB /  107MB            [A[AProcessing Files (0 / 1)      :  28%|██▊       | 29.4MB /  107MB, 2.19MB/s  
-New Data Upload               :  28%|██▊       | 29.4MB /  107MB, 2.19MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  28%|██▊       | 29.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  28%|██▊       | 29.9MB /  107MB            [A[AProcessing Files (0 / 1)      :  28%|██▊       | 29.9MB /  107MB, 2.20MB/s  
-New Data Upload               :  28%|██▊       | 29.9MB /  107MB, 2.20MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  32%|███▏      | 33.8MB /  107MB            [A[AProcessing Files (0 / 1)      :  32%|███▏      | 33.8MB /  107MB, 2.48MB/s  
-New Data Upload               :  32%|███▏      | 33.8MB /  107MB, 2.48MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  32%|███▏      | 33.8MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  36%|███▌      | 38.3MB /  107MB            [A[AProcessing Files (0 / 1)      :  36%|███▌      | 38.3MB /  107MB, 2.79MB/s  
-New Data Upload               :  36%|███▌      | 38.3MB /  107MB, 2.79MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  36%|███▌      | 38.3MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  36%|███▋      | 38.8MB /  107MB            [A[AProcessing Files (0 / 1)      :  36%|███▋      | 38.8MB /  107MB, 2.79MB/s  
-New Data Upload               :  36%|███▋      | 38.8MB /  107MB, 2.79MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  40%|███▉      | 42.7MB /  107MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      | 42.7MB /  107MB, 3.07MB/s  
-New Data Upload               :  40%|███▉      | 42.7MB /  107MB, 3.07MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  40%|███▉      | 42.7MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  41%|████      | 43.8MB /  107MB            [A[AProcessing Files (0 / 1)      :  41%|████      | 43.8MB /  107MB, 3.11MB/s  
-New Data Upload               :  41%|████      | 43.8MB /  107MB, 3.11MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  44%|████▍     | 47.1MB /  107MB            [A[AProcessing Files (0 / 1)      :  44%|████▍     | 47.1MB /  107MB, 3.34MB/s  
-New Data Upload               :  44%|████▍     | 47.1MB /  107MB, 3.34MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  44%|████▍     | 47.1MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  48%|████▊     | 51.6MB /  107MB            [A[AProcessing Files (0 / 1)      :  48%|████▊     | 51.6MB /  107MB, 3.63MB/s  
-New Data Upload               :  48%|████▊     | 51.6MB /  107MB, 3.63MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  48%|████▊     | 51.6MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  48%|████▊     | 51.6MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  52%|█████▏    | 56.0MB /  107MB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    | 56.0MB /  107MB, 3.88MB/s  
-New Data Upload               :  52%|█████▏    | 56.0MB /  107MB, 3.88MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  55%|█████▍    | 58.2MB /  107MB            [A[AProcessing Files (0 / 1)      :  55%|█████▍    | 58.2MB /  107MB, 4.02MB/s  
-New Data Upload               :  55%|█████▍    | 58.2MB /  107MB, 4.02MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  58%|█████▊    | 62.1MB /  107MB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    | 62.1MB /  107MB, 4.29MB/s  
-New Data Upload               :  58%|█████▊    | 62.1MB /  107MB, 4.29MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  60%|██████    | 64.3MB /  107MB            [A[AProcessing Files (0 / 1)      :  60%|██████    | 64.3MB /  107MB, 4.43MB/s  
-New Data Upload               :  60%|██████    | 64.3MB /  107MB, 4.43MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  60%|██████    | 64.3MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  63%|██████▎   | 67.1MB /  107MB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   | 67.1MB /  107MB, 4.57MB/s  
-New Data Upload               :  63%|██████▎   | 67.1MB /  107MB, 4.57MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  63%|██████▎   | 67.1MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  63%|██████▎   | 67.1MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  69%|██████▊   | 73.2MB /  107MB            [A[AProcessing Files (0 / 1)      :  69%|██████▊   | 73.2MB /  107MB, 4.93MB/s  
-New Data Upload               :  69%|██████▊   | 73.2MB /  107MB, 4.93MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  69%|██████▊   | 73.2MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  70%|███████   | 74.9MB /  107MB            [A[AProcessing Files (0 / 1)      :  70%|███████   | 74.9MB /  107MB, 4.98MB/s  
-New Data Upload               :  70%|███████   | 74.9MB /  107MB, 4.98MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  70%|███████   | 74.9MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  70%|███████   | 74.9MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  74%|███████▍  | 79.4MB /  107MB            [A[AProcessing Files (0 / 1)      :  74%|███████▍  | 79.4MB /  107MB, 5.20MB/s  
-New Data Upload               :  74%|███████▍  | 79.4MB /  107MB, 5.20MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  74%|███████▍  | 79.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  74%|███████▍  | 79.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  74%|███████▍  | 79.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  74%|███████▍  | 79.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  76%|███████▋  | 81.6MB /  107MB            [A[AProcessing Files (0 / 1)      :  76%|███████▋  | 81.6MB /  107MB, 5.17MB/s  
-New Data Upload               :  76%|███████▋  | 81.6MB /  107MB, 5.17MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  78%|███████▊  | 83.3MB /  107MB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 83.3MB /  107MB, 5.25MB/s  
-New Data Upload               :  78%|███████▊  | 83.3MB /  107MB, 5.25MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  78%|███████▊  | 83.3MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  80%|████████  | 85.5MB /  107MB            [A[AProcessing Files (0 / 1)      :  80%|████████  | 85.5MB /  107MB, 5.32MB/s  
-New Data Upload               :  80%|████████  | 85.5MB /  107MB, 5.32MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  80%|████████  | 85.5MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  82%|████████▏ | 87.7MB /  107MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 87.7MB /  107MB, 5.40MB/s  
-New Data Upload               :  82%|████████▏ | 87.7MB /  107MB, 5.40MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  82%|████████▏ | 87.7MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  84%|████████▎ | 89.4MB /  107MB            [A[AProcessing Files (0 / 1)      :  84%|████████▎ | 89.4MB /  107MB, 5.44MB/s  
-New Data Upload               :  84%|████████▎ | 89.4MB /  107MB, 5.44MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  84%|████████▍ | 90.0MB /  107MB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 90.0MB /  107MB, 5.44MB/s  
-New Data Upload               :  84%|████████▍ | 90.0MB /  107MB, 5.44MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  84%|████████▍ | 90.0MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  86%|████████▋ | 92.2MB /  107MB            [A[AProcessing Files (0 / 1)      :  86%|████████▋ | 92.2MB /  107MB, 5.52MB/s  
-New Data Upload               :  86%|████████▋ | 92.2MB /  107MB, 5.52MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  86%|████████▋ | 92.2MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  88%|████████▊ | 94.4MB /  107MB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 94.4MB /  107MB, 5.60MB/s  
-New Data Upload               :  88%|████████▊ | 94.4MB /  107MB, 5.60MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  88%|████████▊ | 94.4MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  89%|████████▉ | 95.0MB /  107MB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 95.0MB /  107MB, 5.55MB/s  
-New Data Upload               :  89%|████████▉ | 95.0MB /  107MB, 5.55MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  90%|█████████ | 96.7MB /  107MB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 96.7MB /  107MB, 5.63MB/s  
-New Data Upload               :  90%|█████████ | 96.7MB /  107MB, 5.63MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  90%|█████████ | 96.7MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  93%|█████████▎| 98.9MB /  107MB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 98.9MB /  107MB, 5.71MB/s  
-New Data Upload               :  93%|█████████▎| 98.9MB /  107MB, 5.71MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  93%|█████████▎| 98.9MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  93%|█████████▎| 99.5MB /  107MB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 99.5MB /  107MB, 5.66MB/s  
-New Data Upload               :  93%|█████████▎| 99.5MB /  107MB, 5.66MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  95%|█████████▍|  101MB /  107MB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍|  101MB /  107MB, 5.74MB/s  
-New Data Upload               :  95%|█████████▍|  101MB /  107MB, 5.74MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  95%|█████████▍|  101MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  97%|█████████▋|  104MB /  107MB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋|  104MB /  107MB, 5.86MB/s  
-New Data Upload               :  97%|█████████▋|  104MB /  107MB, 5.86MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  97%|█████████▋|  104MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  99%|█████████▉|  106MB /  107MB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉|  106MB /  107MB, 5.93MB/s  
-New Data Upload               :  99%|█████████▉|  106MB /  107MB, 5.93MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt:  99%|█████████▉|  106MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt:  99%|█████████▉|  106MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉|  107MB /  107MB, 5.85MB/s  
-New Data Upload               : 100%|█████████▉|  107MB /  107MB, 5.85MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|█████████▉|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  107MB /  107MB, 5.47MB/s  
-New Data Upload               : 100%|██████████|  107MB /  107MB, 5.47MB/s  [A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[A
-
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  107MB /  107MB, 5.25MB/s  
-New Data Upload               : 100%|██████████|  107MB /  107MB, 5.25MB/s  
-  ...ts/checkpoints/C5/best.pt: 100%|██████████|  107MB /  107MB            
-  [hf] uploaded -> https://huggingface.co/siddarthg44/anlp-a1-2023102040-C5
-pushed: https://huggingface.co/siddarthg44/anlp-a1-2023102040-C5
-=== C5 wrap-up done at Wed Sep  2 09:45:22 PM IST 2026 ===
