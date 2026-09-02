@@ -1,0 +1,80 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: iamsid44 (iamsid44-iiit-hyderabad) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run ueicipmr
+wandb: Tracking run with wandb version 0.28.2
+wandb: Run data is saved locally in /scratch/shlok/Temp/Transformers-from-Scratch/wandb/run-20260829_131239-ueicipmr
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run C5
+wandb: ⭐️ View project at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040
+wandb: 🚀 View run at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040/runs/ueicipmr
+GPU: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (102.0 GB)
+
+==============================================================================
+Training C5: pos=sinusoidal, attn=mha, norm=layernorm, tokenization=blt
+  parameters      22.49M (22.49M trainable)
+  train examples  39,683  (39 steps/epoch x 60 epochs)
+  warmup          39 steps (1 epochs)
+  device          cuda
+==============================================================================
+  epoch  1/60  train 3.7020  val 2.4998  ppl 12.18  tf 1.00  src -0.0pt  2m59s  221 ex/s  47119 MiB
+  epoch  2/60  train 2.9514  val 2.3804  ppl 10.81  tf 1.00  src -0.0pt  2m58s  222 ex/s  47120 MiB
+  epoch  3/60  train 2.9053  val 2.3069  ppl 10.04  tf 0.99  src +0.0pt  2m59s  221 ex/s  47120 MiB
+  epoch  4/60  train 2.8186  val 2.2090  ppl 9.11  tf 0.98  src -0.0pt  2m58s  222 ex/s  47120 MiB
+  epoch  5/60  train 2.7484  val 2.1518  ppl 8.60  tf 0.98  src -0.0pt  2m56s  225 ex/s  47120 MiB
+  epoch  6/60  train 2.7086  val 2.0841  ppl 8.04  tf 0.97  src -0.0pt  2m57s  223 ex/s  47120 MiB
+  epoch  7/60  train 2.6422  val 1.9610  ppl 7.11  tf 0.97  src +0.0pt  2m58s  222 ex/s  47120 MiB
+  epoch  8/60  train 2.5661  val 1.8821  ppl 6.57  tf 0.96  src -0.0pt  2m57s  223 ex/s  47120 MiB
+  epoch  9/60  train 2.5113  val 1.8142  ppl 6.14  tf 0.96  src +0.0pt  2m58s  222 ex/s  47120 MiB
+  epoch 10/60  train 2.4634  val 1.8240  ppl 6.20  tf 0.95  src +0.2pt  2m57s  223 ex/s  47120 MiB
+  epoch 11/60  train 2.4527  val 1.7355  ppl 5.67  tf 0.95  src +0.1pt  2m58s  223 ex/s  47120 MiB
+  epoch 12/60  train 2.4146  val 1.7237  ppl 5.61  tf 0.94  src +1.4pt  2m59s  221 ex/s  47120 MiB
+  epoch 13/60  train 2.4104  val 1.6844  ppl 5.39  tf 0.94  src +0.0pt  2m58s  222 ex/s  47120 MiB
+  epoch 14/60  train 2.3884  val 1.6662  ppl 5.29  tf 0.93  src +0.1pt  2m58s  223 ex/s  47120 MiB
+  epoch 15/60  train 2.3873  val 1.6618  ppl 5.27  tf 0.93  src +0.0pt  2m57s  223 ex/s  47120 MiB
+  epoch 16/60  train 2.3729  val 1.6444  ppl 5.18  tf 0.92  src +0.1pt  3m00s  220 ex/s  47120 MiB
+  epoch 17/60  train 2.3705  val 1.6319  ppl 5.11  tf 0.92  src +0.0pt  2m57s  224 ex/s  47120 MiB
+  epoch 18/60  train 2.3628  val 1.6327  ppl 5.12  tf 0.91  src +0.0pt  2m58s  223 ex/s  47120 MiB
+  epoch 19/60  train 2.3539  val 1.6168  ppl 5.04  tf 0.91  src +0.0pt  2m59s  221 ex/s  47120 MiB
+  epoch 20/60  train 2.3575  val 1.6142  ppl 5.02  tf 0.90  src -0.0pt  2m57s  224 ex/s  47120 MiB
+  epoch 21/60  train 2.3553  val 1.5988  ppl 4.95  tf 0.90  src +0.1pt  2m57s  223 ex/s  47120 MiB
+  epoch 22/60  train 2.3480  val 1.5998  ppl 4.95  tf 0.89  src +0.1pt  2m57s  223 ex/s  47120 MiB
+  epoch 23/60  train 2.3536  val 1.5928  ppl 4.92  tf 0.89  src +0.0pt  3m00s  220 ex/s  47120 MiB
+  epoch 24/60  train 2.3532  val 1.5834  ppl 4.87  tf 0.88  src +0.2pt  2m57s  224 ex/s  47120 MiB
+  epoch 25/60  train 2.3464  val 1.5910  ppl 4.91  tf 0.88  src +0.1pt  2m55s  226 ex/s  47120 MiB
+  epoch 26/60  train 2.3579  val 1.5801  ppl 4.86  tf 0.87  src +0.5pt  2m58s  222 ex/s  47120 MiB
+  epoch 27/60  train 2.3518  val 1.5835  ppl 4.87  tf 0.87  src +0.0pt  2m57s  224 ex/s  47120 MiB
+  epoch 28/60  train 2.3589  val 1.5736  ppl 4.82  tf 0.86  src +0.1pt  2m58s  222 ex/s  47120 MiB
+  epoch 29/60  train 2.3587  val 1.5713  ppl 4.81  tf 0.86  src +0.1pt  3m00s  220 ex/s  47120 MiB
+  epoch 30/60  train 2.3578  val 1.5822  ppl 4.87  tf 0.85  src +0.4pt  2m56s  225 ex/s  47120 MiB
+  epoch 31/60  train 2.3648  val 1.5722  ppl 4.82  tf 0.85  src +0.3pt  2m51s  232 ex/s  47120 MiB
+  epoch 32/60  train 2.3640  val 1.5692  ppl 4.80  tf 0.84  src +0.2pt  2m52s  230 ex/s  47120 MiB
+  epoch 33/60  train 2.3681  val 1.5680  ppl 4.80  tf 0.84  src +0.2pt  2m53s  228 ex/s  47120 MiB
+  epoch 34/60  train 2.3707  val 1.5664  ppl 4.79  tf 0.83  src +0.2pt  2m51s  231 ex/s  47120 MiB
+  epoch 35/60  train 2.3703  val 1.5698  ppl 4.81  tf 0.83  src +0.3pt  2m50s  233 ex/s  47120 MiB
+  epoch 36/60  train 2.3820  val 1.5652  ppl 4.78  tf 0.82  src +0.1pt  2m54s  227 ex/s  47120 MiB
+  epoch 37/60  train 2.3803  val 1.5647  ppl 4.78  tf 0.82  src +0.3pt  2m58s  222 ex/s  47120 MiB
+Traceback (most recent call last):
+  File "/scratch/shlok/Temp/Transformers-from-Scratch/src/train.py", line 786, in <module>
+    main()
+  File "/scratch/shlok/Temp/Transformers-from-Scratch/src/train.py", line 765, in main
+    summaries[name] = train_one(name, train_cfg, device, use_wandb=not args.no_wandb,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/shlok/Temp/Transformers-from-Scratch/src/train.py", line 343, in train_one
+    for batch in loaders["train"]:
+  File "/scratch/shlok/Temp/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 741, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/scratch/shlok/Temp/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 801, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/shlok/Temp/.venv/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py", line 54, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+            ~~~~~~~~~~~~^^^^^
+  File "/scratch/shlok/Temp/Transformers-from-Scratch/src/dataset.py", line 348, in __getitem__
+    return (torch.tensor(list(pair.cipher.encode("latin-1")), dtype=torch.long),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mC5[0m at: [34mhttps://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040/runs/ueicipmr[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/run-20260829_131239-ueicipmr/logs[0m

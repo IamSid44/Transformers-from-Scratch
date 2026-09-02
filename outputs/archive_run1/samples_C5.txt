@@ -1,0 +1,35 @@
+Greedy decoding samples -- C5 (Tokenization)
+====================================================================================================
+
+--- test line 3 (bit accuracy 67.70%, edit distance 615) ---
+GOLD: He had a recurring role in on two episodes of The Bill as character Connor Price In Boulter landed a role as Craig in the episode Teddy s Story of the television series The Long Firm he starred alongside actors Mark Strong and Derek Jacobi Boulter starred as Darren in the theatre productions of the Philip Ridley play Mercury Fur It was performed at the Drum Theatre in Plymouth and the Menier Choco
+PRED: tion for several in carting three secorder in the Brinish ceropehe  All as Mali of Shich was offed four y of Austral the topple t an long personion they not cont In cont In May t higher trappee an Ameristics as promoted In and was also discilled most are sas product that that starriers Hange of the Big The first seatioruary coty is and provides aft the Barth Wales ain Shile s aand the Chinatowns A
+
+--- test line 4 (bit accuracy 74.52%, edit distance 557) ---
+GOLD: In Boulter starred in the play Citizenship written by Mark Ravenhill The play was part of a series which featured different playwrights titled Burn Chatroom Citizenship In a interview fellow actor Ben Whishaw identified Boulter as one of his favorite co stars I loved working with a guy called Robert Boulter who was in the triple bill of Burn Chatroom and Citizenship at the National He played my br
+PRED: In Japanese time bet they to leaving New Yorkshine at Cania She line The mait was restand to be seen as a coty of provident compemaited with his parting poline against Angel was commenced by Aeen distined firsing The promiser commentions and service nor hioria The residening trann Cordinally times ielease it may in in the transfer of of Air Fontrar an Manila protect at the Marian C Sepported as no
+
+--- test line 13 (bit accuracy 67.70%, edit distance 204) ---
+GOLD: His father died around Du Fu would have been allowed to enter the civil service because of his father s rank but he is thought to have given up the privilege in favour of one of his half brothers He spent the next four years living in the Luoyang area fulfilling his duties in domestic affairs
+PRED: The film becave around it nutherns weeks be Although think of the consider colones wor aong warship s secant such parking that he wath show was the produced trade possion into a the entire conres was about their a serent leadition and the Austran for a conion in Second
+
+--- test line 17 (bit accuracy 75.62%, edit distance 573) ---
+GOLD: The An Lushan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely itinerant life unsettled by wars associated famines and imperial displeasure Th
+PRED: The Antirer The site on estation He as at als and not complete A serore service conte commander but it wost his reach service Co to Antere cach withthe care said bycome befale of his to had ton represented the construction office conclud the price between ng a series lanes of man filling in three Constructive all regio a start as harloing They wetten to make his filling and largs st Baski but to c
+
+--- test line 26 (bit accuracy 73.96%, edit distance 133) ---
+GOLD: Hung summarises his life by concluding that He appeared to be a filial son an affectionate father a generous brother a faithful husband a loyal friend a dutiful official and a patriotic subject
+PRED: The secondar seasion landed contribund that his prodes throug a ling of on an areund of a coty of a schoor sester con Anthorist sen and a concepurating who was not come to a trace for his secot
+
+--- test line 29 (bit accuracy 73.23%, edit distance 312) ---
+GOLD: Since the Song dynasty critics have called Du Fu the poet historian sh sh The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advice which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this is inf
+PRED: A the war than Albums Road A consertional pow The armunit was cois a fort The east first new comprominent and reperforme the weeout  and on July Bart continuatithe subsester and sell were to te devery positi the ports of Augulatity a weature in the top prot This which had rele befor the southward the thoughing The statlines to fin shing aong the prodence procles on Marching lating st in and sing f
+
+--- test line 45 (bit accuracy 65.27%, edit distance 852) ---
+GOLD: Until the th century the Japanese preferred Bai Juyi above all poets and there were few references to Du Fu although his influence can be seen in some kanshi Chinese poetry made by Japanese poets anthologies such as Bunka Shreish in the th century The first notable Japanese appreciator of Du Fu s poetry was Kokan Shiren a Rinzai Zen patriarch and one of the most prominent authors of the literature
+PRED: After the th century the Britishs part over Marculations bet Ausrea  and there were supportedeen Anter senter The resents at under peter fired by Novend s peted and contributors as land times it in the th century The first Battle too constructions for at then is particu front The firsn an Marine Series Pool of Song  of the courure Band The e was af the come off aong the Tetray Internated while aro
+
+--- test line 53 (bit accuracy 76.18%, edit distance 127) ---
+GOLD: The song was included in the dancing game Just Dance and is also one of the select songs available on the demo version Additionally it is the final main track on the US edition of Now That s What I Call Music
+PRED: The first mand season by the end of Septe Ame Bank in May Collec of  of the seconder of The Bourge on the projecers of a minion line with the final main teach in the Native Changle Ball Come ttion at Marcus Court
+
