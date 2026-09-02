@@ -34,6 +34,7 @@ import dataset as ds
 import utils                             
 from attention import Seq2SeqTransformer 
 from blt import BLTSeq2Seq, bytes_to_text
+from entropy_lm import MAX_PATCH_SIZE
 
 # --- identity / paths --------------------------------------------------------------------
 ROLL_NUMBER = "2023102040"
@@ -76,7 +77,7 @@ class ModelConfig:
     local_attn_window: int = 128
     ngram_sizes: tuple = (3, 4)
     ngram_buckets: int = 8192              # target side (English)
-    src_ngram_buckets: int = 512           # source side: only 2^3 3-grams exist in binary
+    src_ngram_buckets: int = 8192          # source side: real byte values, so a real n-gram space
 
     @property
     def is_blt(self) -> bool:
@@ -95,14 +96,26 @@ class ModelConfig:
 class TrainConfig:
     """Shared across all five configurations, so any difference is architectural."""
 
-    epochs: int = 60
-    batch_size: int = 1024
-    lr: float = 1e-3                       # Adam, linear warmup then cosine decay to 10% of peak
+    # The first round of runs used batch 1024 for 60 epochs. On 39,683 chunks that is 38 steps
+    # per epoch -- 2,280 optimiser steps in total -- and every one of the five configurations
+    # was still descending at the final epoch (best_epoch == 60 for all five). The numbers it
+    # produced were a measurement of convergence *speed*, not of final quality, which is why
+    # C1 and C2 looked 4x apart in validation loss. Batch 256 over 32-character chunks gives
+    # 302 steps per epoch; 40 epochs is ~12,000 steps, about 5x the previous budget.
+    epochs: int = 40
+    batch_size: int = 256
+    lr: float = 6e-4                       # Adam, linear warmup then cosine decay to 10% of peak
     warmup_epochs: float = 1               # converted to a step count in train_one, since
                                             # steps_per_epoch depends on batch_size and corpus size
     grad_clip: float = 1.0
     label_smoothing: float = 0.1
-    scheduled_sampling_floor: float = 0.7  # see teacher_forcing_prob
+    # Scheduled sampling, off. The cipher is an exact deterministic bijection (plaintext XOR a
+    # repeating 8-byte key), so there is no ambiguity for the model to be robust *to*: mixing
+    # in its own wrong predictions is pure label noise, and the extra no-grad forward pass it
+    # needs costs ~40% of the step time. 1.0 is pure teacher forcing. Left as a knob rather
+    # than deleted because the mechanism is still the right answer on a genuinely ambiguous
+    # target, and the report contrasts the two runs.
+    scheduled_sampling_floor: float = 1.0
     early_stopping_patience: int = 5
     group_by_length: bool = True           # batch similar-length lines together
     num_workers: int = 0
@@ -153,7 +166,8 @@ def build_model(model_cfg, meta: dict) -> nn.Module:
     same class in latent mode."""
     max_len = max(meta["max_src_len"], meta["max_tgt_len"]) + 64
     if model_cfg.is_blt:
-        return BLTSeq2Seq(model_cfg, max_len=max_len)
+        return BLTSeq2Seq(model_cfg, max_len=max_len,
+                          max_patch=meta.get("max_patch_size", MAX_PATCH_SIZE))
     return Seq2SeqTransformer(model_cfg, meta["cipher_vocab_size"], meta["plain_vocab_size"],
                               pad_id=ds.PAD_ID, max_len=max_len)
 
@@ -196,14 +210,16 @@ def compute_loss(model_cfg, model, batch, label_smoothing: float, tf_prob: float
     """
     src, tgt = batch["src"], batch["tgt"]
     if model_cfg.is_blt:
+        # `batch` carries the entropy-derived patch grids alongside the bytes; the model reads
+        # the four `*_patch_index` / `*_patch_mask` entries out of it.
         ctx = tgt
         if model.training and tf_prob < 1.0:
             with torch.no_grad():
-                own = model(src, tgt).argmax(-1)
+                own = model(src, tgt, batch).argmax(-1)
             replace = (torch.rand(tgt.shape, device=tgt.device) >= tf_prob) \
                 & (tgt != ds.BYTE_PAD_ID)
             ctx = torch.where(replace, own, tgt)
-        logits, labels, ignore = model(src, tgt, ctx_bytes=ctx), tgt, ds.BYTE_PAD_ID
+        logits, labels, ignore = model(src, tgt, batch, ctx_bytes=ctx), tgt, ds.BYTE_PAD_ID
     else:
         tgt_in = tgt[:, :-1]
         if model.training and tf_prob < 1.0 and tgt_in.size(1) > 1:
@@ -261,13 +277,20 @@ def source_dependence(model_cfg, model, loader, device, max_batches: int = 2) ->
     for i, batch in enumerate(loader):
         if i >= max_batches:
             break
-        src, tgt = (batch[k].to(device, non_blocking=True) for k in ("src", "tgt"))
+        batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+        src, tgt = batch["src"], batch["tgt"]
         if src.size(0) < 2:
             continue
         rolled = torch.roll(src, 1, 0)
         if model_cfg.is_blt:
             labels, ignore = tgt, ds.BYTE_PAD_ID
-            real, wrong = model(src, tgt), model(rolled, tgt)
+            # The source grid rolls with the source it describes -- otherwise the "wrong
+            # source" run would also be reading a mismatched patch segmentation and the gap
+            # would conflate two different changes.
+            rolled_batch = {**batch,
+                            "src_patch_index": torch.roll(batch["src_patch_index"], 1, 0),
+                            "src_patch_mask": torch.roll(batch["src_patch_mask"], 1, 0)}
+            real, wrong = model(src, tgt, batch), model(rolled, tgt, rolled_batch)
         else:
             labels, ignore = tgt[:, 1:], ds.PAD_ID
             real, wrong = model(src, tgt[:, :-1]), model(rolled, tgt[:, :-1])
@@ -392,6 +415,23 @@ def train_one(config_name, train_cfg, device, use_wandb=True, smoke_steps=0, pus
                      "perf/epoch_seconds": epoch_timer.elapsed,
                      "perf/examples_per_sec": ex_per_sec,
                      "perf/peak_memory_mb": peak_mb}, step=global_step)
+
+        # Persist the history every epoch, not only at the end. A long run that is stopped on
+        # a wall-clock budget (C5) still has a usable best checkpoint, and this is what keeps
+        # its loss curves and per-epoch cost numbers alongside it.
+        utils.save_json({"config": config_name, "params": total_params,
+                         "params_millions": total_params / 1e6,
+                         "best_val_loss": best_val, "best_epoch": best_epoch,
+                         "epochs_run": len(history["train_loss"]),
+                         "wall_seconds": time.perf_counter() - wall_start,
+                         "sec_per_epoch": sum(history["epoch_seconds"])
+                                          / len(history["epoch_seconds"]),
+                         "examples_per_sec": sum(history["examples_per_sec"])
+                                             / len(history["examples_per_sec"]),
+                         "peak_memory_mb": max(history["peak_memory_mb"], default=0.0),
+                         "history": history, "model_config": model_cfg.to_dict(),
+                         "partial": True},
+                        ds.OUTPUT_DIR / f"history_{config_name}.json")
 
         if val_loss < best_val - 1e-5:
             best_val, best_epoch, stale = val_loss, epoch, 0
@@ -539,14 +579,17 @@ def load_checkpoint(config_name: str, device: torch.device):
 
 @torch.no_grad()
 def decode_split(model, model_cfg, data, split, device, limit_lines=None):
-    """Greedily decode one split. Returns (predictions, pairs, stats).
+    """Greedily decode one split. Returns (chunk_preds, chunk_pairs, line_preds, lines, stats).
 
-    The model decodes chunks (`data["loaders"][split]` is built from `chunk_pairs`), but
-    scoring happens at whole-line granularity: chunk predictions are regrouped by
-    `chunk_line_ids` and concatenated in order before being returned, one string per entry
-    of `pairs`.
+    The model decodes chunks (`data["loaders"][split]` is built from `chunk_pairs`), so the
+    chunk is the unit it is actually scored on. Chunk predictions are *also* regrouped by
+    `chunk_line_ids` and concatenated in order to give one string per whole corpus line, which
+    is the harder end-to-end view: a chunk that emits one character too few shifts every
+    position after it, so the line-level positional metrics punish a length slip far more than
+    the chunk-level ones do. Both are reported.
     """
     pairs = data["pairs"][split]
+    chunks = data["chunks"][split]
     chunk_line_ids = data["chunk_line_ids"][split]
     loader = data["loaders"][split]
 
@@ -558,6 +601,7 @@ def decode_split(model, model_cfg, data, split, device, limit_lines=None):
                      len(chunk_line_ids))
         pairs = pairs[:limit_lines]
         chunk_line_ids = chunk_line_ids[:cutoff]
+        chunks = chunks[:cutoff]
         loader = torch.utils.data.DataLoader(
             torch.utils.data.Subset(data["datasets"][split], range(cutoff)),
             # .batch_size is None when a loader was built with a batch_sampler.
@@ -569,9 +613,10 @@ def decode_split(model, model_cfg, data, split, device, limit_lines=None):
     utils.reset_peak_memory()
     with utils.Timer() as timer:
         for batch in loader:
-            src = batch["src"].to(device, non_blocking=True)
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            src = batch["src"]
             if model_cfg.is_blt:
-                out = model.greedy_decode(src, max_bytes=meta["max_tgt_len"])
+                out = model.greedy_decode(src, batch)
                 chunk_predictions.extend(bytes_to_text(row) for row in out.cpu())
             else:
                 out = model.greedy_decode(src, max_len=meta["max_tgt_len"],
@@ -584,8 +629,9 @@ def decode_split(model, model_cfg, data, split, device, limit_lines=None):
         grouped.setdefault(line_id, []).append(pred)
     predictions = ["".join(grouped[p.line_id]) for p in pairs]
 
-    return predictions, pairs, {"decode_seconds": timer.elapsed,
-                                "decode_peak_memory_mb": utils.peak_memory_mb()}
+    return (chunk_predictions, chunks, predictions, pairs,
+            {"decode_seconds": timer.elapsed,
+             "decode_peak_memory_mb": utils.peak_memory_mb()})
 
 
 def evaluate_config(config_name, device, split="test", limit_lines=None, n_samples=8) -> dict:
@@ -597,11 +643,16 @@ def evaluate_config(config_name, device, split="test", limit_lines=None, n_sampl
     total_params, _ = utils.count_parameters(model)
 
     print(f"[{config_name}] decoding {split} split greedily ...")
-    preds, pairs, stats = decode_split(model, model_cfg, data, split, device, limit_lines)
+    chunk_preds, chunks, preds, pairs, stats = decode_split(
+        model, model_cfg, data, split, device, limit_lines)
     golds = [p.plain for p in pairs]
 
-    print(f"[{config_name}] scoring {len(preds)} lines ...")
-    metrics = utils.compute_all_metrics(preds, golds)
+    # Primary: the chunk, which is the unit the model decodes. Secondary (`*_line`): the whole
+    # corpus line, reassembled from its chunks.
+    print(f"[{config_name}] scoring {len(chunk_preds)} chunks / {len(preds)} lines ...")
+    metrics = utils.compute_all_metrics(chunk_preds, [c.plain for c in chunks])
+    metrics.update({f"{k}_line": v
+                    for k, v in utils.compute_all_metrics(preds, golds).items()})
     metrics.update({
         "config": config_name,
         "changed_from_base": model_cfg.changed_from_base,
@@ -624,10 +675,13 @@ def evaluate_config(config_name, device, split="test", limit_lines=None, n_sampl
                      f"edit distance {utils.levenshtein(pred, pair.plain)}) ---\n")
             fh.write(f"GOLD: {pair.plain[:400]}\nPRED: {pred[:400]}\n\n")
 
-    print(f"[{config_name}] bit={metrics['bit_accuracy']:.2f}%  "
+    print(f"[{config_name}] chunk: bit={metrics['bit_accuracy']:.2f}%  "
           f"char={metrics['char_accuracy']:.2f}%  seq={metrics['sequence_accuracy']:.2f}%  "
-          f"lev={metrics['levenshtein_mean']:.1f}  BLEU={metrics['bleu']:.2f}  "
+          f"lev={metrics['levenshtein_mean']:.2f}  BLEU={metrics['bleu']:.2f}  "
           f"ROUGE-L={metrics['rougeL']:.2f}")
+    print(f"[{config_name}] line : bit={metrics['bit_accuracy_line']:.2f}%  "
+          f"seq={metrics['sequence_accuracy_line']:.2f}%  "
+          f"lev={metrics['levenshtein_mean_line']:.1f}  BLEU={metrics['bleu_line']:.2f}")
     return metrics
 
 
@@ -638,6 +692,10 @@ METRIC_COLUMNS = [
     # reference implementations, for comparison against the hand-rolled columns above
     "levenshtein_mean_lib", "levenshtein_normalized_lib",
     "rouge1_lib", "rouge2_lib", "rougeL_lib",
+    # the same metrics on whole reassembled corpus lines rather than on decoded chunks
+    "bit_accuracy_line", "char_accuracy_line", "sequence_accuracy_line",
+    "levenshtein_mean_line", "levenshtein_normalized_line", "bleu_line",
+    "rouge1_line", "rouge2_line", "rougeL_line",
     "decode_ms_per_line", "inference_peak_memory_mb",
 ]
 
@@ -677,7 +735,10 @@ def write_results(results: dict[str, dict]) -> None:
         if not path.exists():
             continue
         summary = json.loads(path.read_text(encoding="utf-8"))
-        histories[name] = summary["history"]
+        # Carry the model config alongside the curves: plot_loss_curves reads `tokenization`
+        # from it to mark C5's byte-level loss as not comparable with C1-C4's per-token loss.
+        histories[name] = {**summary["history"],
+                           "model_config": summary.get("model_config", {})}
         runtime[name] = {
             "params_millions": summary["params_millions"],
             "peak_memory_mb": summary["peak_memory_mb"],
@@ -728,6 +789,19 @@ def main() -> None:
     parser.add_argument("--smoke-steps", type=int, default=50)
     parser.add_argument("--limit-lines", type=int, help="evaluate only the first N test lines")
     parser.add_argument("--no-wandb", action="store_true")
+    parser.add_argument("--no-write", action="store_true",
+                        help="evaluate but write only outputs/metrics_<config>.json, leaving the "
+                             "shared results/figure files alone. Lets several configurations be "
+                             "evaluated in parallel processes without racing each other on "
+                             "results.json; follow with --collect to merge them.")
+    parser.add_argument("--collect", action="store_true",
+                        help="merge every outputs/metrics_*.json written by --no-write into "
+                             "results.csv / results.json / runtime_stats.json and redraw the "
+                             "figures, then exit")
+    parser.add_argument("--no-eval", action="store_true",
+                        help="train only; skip the evaluation that would rewrite the shared "
+                             "results files (use when configs train in parallel processes, "
+                             "then run --evaluate --all once at the end)")
     parser.add_argument("--push", action="store_true", help="upload the checkpoint to HuggingFace")
     parser.add_argument("--cpu", action="store_true")
     args = parser.parse_args()
@@ -739,6 +813,18 @@ def main() -> None:
         print(f"GPU: {torch.cuda.get_device_name(0)} "
               f"({torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB)")
 
+    if args.collect:
+        collected = {}
+        for path in sorted(ds.OUTPUT_DIR.glob("metrics_*.json")):
+            metrics = json.loads(path.read_text(encoding="utf-8"))
+            collected[metrics["config"]] = metrics
+        if not collected:
+            raise SystemExit(f"No metrics_*.json in {ds.OUTPUT_DIR}; run --evaluate --no-write "
+                             f"first.")
+        print(f"[collect] merging {', '.join(sorted(collected))}")
+        write_results(collected)
+        return
+
     if args.evaluate:
         if args.all:
             names = [n for n in CONFIGS if (CKPT_DIR / n / "best.pt").exists()]
@@ -749,8 +835,14 @@ def main() -> None:
                 print(f"warning: no checkpoint for {', '.join(missing)} -- skipping")
         else:
             names = [args.config.upper()]
-        write_results({n: evaluate_config(n, device, limit_lines=args.limit_lines)
-                       for n in names})
+        results = {n: evaluate_config(n, device, limit_lines=args.limit_lines) for n in names}
+        if args.no_write:
+            for name, metrics in results.items():
+                utils.save_json(metrics, ds.OUTPUT_DIR / f"metrics_{name}.json")
+                print(f"[{name}] wrote outputs/metrics_{name}.json "
+                      f"(shared results files untouched; run --collect to merge)")
+        else:
+            write_results(results)
         return
 
     train_cfg = TrainConfig()
@@ -765,7 +857,7 @@ def main() -> None:
         summaries[name] = train_one(name, train_cfg, device, use_wandb=not args.no_wandb,
                                     smoke_steps=args.smoke_steps if args.smoke else 0,
                                     push=args.push)
-        if not args.smoke:
+        if not args.smoke and not args.no_eval:
             # Evaluate immediately so results.csv/json and the figures are current after
             # every config, not just at the end of the whole run -- lets a run be judged (and
             # stopped, if a config is clearly off) without waiting for --all to finish.

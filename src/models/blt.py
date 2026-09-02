@@ -9,18 +9,29 @@ The global transformer is the same class as C1 with the same depth, width, sinus
 encoding, MHA and LayerNorm, so only the representation layer differs: a learned vocabulary is
 replaced by learned pooling over raw bytes.
 
-Simplification vs Meta's BLT paper: patching is fixed-stride rather than entropy-driven, which
-the assignment explicitly permits ("a simplified BLT").
+Patching is entropy-driven, as in the BLT paper: a small byte-level LM (`entropy_lm.py`)
+scores next-byte entropy over the cipher stream and a new patch opens wherever that entropy
+crosses a calibrated global threshold, capped at MAX_PATCH_SIZE bytes. Patches are therefore
+variable width -- long through predictable stretches, short where the next byte is genuinely
+uncertain -- and every module below indexes bytes through a (B, N, P) gather grid rather than
+a reshape on a fixed stride.
+
+What is simplified relative to the paper: the entropy model is 0.5M parameters rather than
+100M, and the global/local stacks are sized to this corpus. The patching rule itself is not
+simplified.
 
 Causality: the target-side local encoder is causal. Its output for patch t is pooled into what
 the global decoder consumes at step t, and step t predicts patch t+1 -- so a byte in patch t
 attending into patch t+1 would be reading its own answer.
 
-Alignment: the two patch grids cover the same span of text (SRC_PATCH_SIZE = 8 *
-TGT_PATCH_SIZE, since the corpus spends 8 cipher characters per plaintext character), so
-source patch k and target patch k describe the same characters and receive the same sinusoidal
-position in the global transformer. See BLT.md for why that matters and what happened when
-they were chosen independently.
+Alignment: the two patch grids cover the same span of text. dataset.py hands C5 one cipher
+byte per plaintext character (the corpus writes each as 8 '0'/'1' characters; they are packed
+back into the byte they denote), and the entropy segmentation computed on the cipher is reused
+verbatim for the plaintext -- legitimate because the two streams are a character-for-character
+bijection, and necessary because at inference the plaintext does not exist yet. Source patch k
+and target patch k therefore describe the same characters and receive the same sinusoidal
+position in the global transformer. See BLT.md for why that matters and what happened when the
+two grids were chosen independently.
 """
 
 from __future__ import annotations
@@ -34,6 +45,7 @@ import torch.nn.functional as F
 
 from attention import (DecoderLayer, EncoderLayer, MultiHeadAttention,
                        Seq2SeqTransformer, causal_mask)
+from entropy_lm import MAX_PATCH_SIZE, TARGET_MEAN_PATCH
 from norm import build_norm
 from positional import SinusoidalPositionalEncoding
 
@@ -42,22 +54,19 @@ from positional import SinusoidalPositionalEncoding
 BYTE_PAD_ID, BYTE_EOS_ID, BYTE_PATCH_START_ID = 256, 257, 258
 BYTE_VOCAB_SIZE = 259
 
-# Pooling strides. A patch is the unit the global transformer reasons over, so the two grids
-# have to cover the *same* span of text: the corpus encodes every plaintext character as
-# exactly BITS_PER_CHAR cipher characters, so one source patch must be that many times longer
-# than the target patch it corresponds to. With the grids aligned, source patch k and target
-# patch k hold the same characters, both get the same sinusoidal position in the global
-# transformer, and cross-attention has a diagonal to find.
+# The patch grid. Widths are chosen per-chunk by `entropy_lm.patch_boundaries`; MAX_PATCH_SIZE
+# is the cap that bounds the padded (B, N, P) tensors the modules below index through, and the
+# threshold is calibrated so the mean lands near TARGET_MEAN_PATCH.
 #
-# They were previously chosen independently (16 cipher bits = 2 characters against 8 plaintext
-# bytes = 8 characters), which left target character (patch n, slot j) depending on source
-# patch 4n + j//2 -- and on one half of a patch whose pooling had already averaged its two
-# characters together. C5 never found that alignment: it collapsed onto modelling English
-# unconditionally and scored 1.9525 nats/byte, against 1.9721 for a source-blind character
-# n-gram with the same receptive field. See BLT.md.
-BITS_PER_CHAR = 8
-TGT_PATCH_SIZE = 4                                 # plaintext characters per target patch
-SRC_PATCH_SIZE = BITS_PER_CHAR * TGT_PATCH_SIZE    # the same 4 characters, as 32 cipher bits
+# The two grids have to cover the *same* span of text: with them aligned, source patch k and
+# target patch k hold the same characters, both get the same sinusoidal position in the global
+# transformer, and cross-attention has a diagonal to find. The strides were once chosen
+# independently (16 cipher bits = 2 characters against 8 plaintext bytes = 8 characters), which
+# left target character (patch n, slot j) depending on source patch 4n + j//2 -- and on one half
+# of a patch whose pooling had already averaged its two characters together. C5 never found that
+# alignment: it collapsed onto modelling English unconditionally and scored 1.9525 nats/byte,
+# against 1.9721 for a source-blind character n-gram with the same receptive field. See BLT.md.
+BITS_PER_CHAR = 8                                  # cipher characters the corpus spends per char
 
 
 @dataclass
@@ -83,10 +92,15 @@ def _local_cfg(cfg) -> LocalConfig:
 class ByteEmbedding(nn.Module):
     """Byte lookup plus hashed byte n-gram embeddings.
 
-    A single byte carries almost nothing ('0'/'1' on the source side), so each position is
-    augmented with embeddings of the n-grams *ending* there. Hashing into fixed buckets makes
-    260^4 possible 4-grams cost only `ngram_buckets` rows. Windows look strictly backwards, so
-    this stays usable in the causal target encoder.
+    A single byte is a weak feature, so each position is augmented with embeddings of the
+    n-grams *ending* there. Hashing into fixed buckets makes 259^4 possible 4-grams cost only
+    `ngram_buckets` rows. Windows look strictly backwards, so this stays usable in the causal
+    target encoder.
+
+    The hash is position-blind by construction: the same window maps to the same bucket wherever
+    it occurs. That is why the source has to arrive as one byte per character -- over a stream of
+    literal '0'/'1' characters these windows spanned 3 or 4 *bits*, could not reach a character
+    boundary, and could not tell which bit offset within the character they sat at.
     """
 
     def __init__(self, d_local: int, ngram_sizes=(3, 4), ngram_buckets: int = 8192):
@@ -169,9 +183,8 @@ class LocalByteEncoder(nn.Module):
         # applies to the tokenized models' embeddings. A sinusoidal row has norm sqrt(d/2) ~
         # 11.3 by construction while a freshly initialised embedding has norm ~0.55, so without
         # the scaling the byte identity is under 5% of the vector the first layer sees (45% in
-        # C1-C4). On the source side that is fatal rather than merely slow: a cipher byte is
-        # '0' or '1', so its entire content is one bit, and the measured content share of the
-        # trained src_encoder's output variance was 0.01%.
+        # C1-C4). The measured content share of the trained src_encoder's output variance, back
+        # when the source arrived one bit per position and this scaling was missing, was 0.01%.
         x = self.pos(self.embed(byte_ids) * math.sqrt(self.d_local))
         x, n_blocks, orig_len = _to_blocks(x, self.window)
         mask = _mask_to_blocks(byte_ids != BYTE_PAD_ID, self.window, n_blocks)
@@ -182,36 +195,55 @@ class LocalByteEncoder(nn.Module):
         return _from_blocks(self.norm(x), batch, n_blocks, orig_len)
 
 
-class PatchPooler(nn.Module):
-    """Compress a fixed stride of byte states into one patch vector by cross-attention: a
-    learned query attends over its patch's bytes, so the model decides which bytes matter. A
-    mean-pool residual keeps the output sensible before attention has learned anything."""
 
-    def __init__(self, cfg, patch_size: int):
+def gather_slots(x: torch.Tensor, patch_index: torch.Tensor) -> torch.Tensor:
+    """Byte axis -> patch grid. (B, L, d) -> (B, N, P, d), or (B, L) -> (B, N, P).
+
+    `patch_index[b, n, j]` is the byte position sitting in slot j of patch n, or 0 for an
+    unused slot -- the companion mask, not the index, is what marks those. One gather replaces
+    the `reshape(B, L // P, P)` a fixed stride could use.
+    """
+    b, n, p = patch_index.shape
+    flat = patch_index.reshape(b, n * p)
+    if x.dim() == 2:
+        return x.gather(1, flat).reshape(b, n, p)
+    d = x.size(-1)
+    return x.gather(1, flat.unsqueeze(-1).expand(-1, -1, d)).reshape(b, n, p, d)
+
+
+class PatchPooler(nn.Module):
+    """Compress one patch's byte states into one patch vector by cross-attention: a learned
+    query attends over the patch's bytes, so the model decides which bytes matter. A mean-pool
+    residual keeps the output sensible before attention has learned anything.
+
+    Patches are variable width, so the bytes are gathered rather than reshaped and every
+    reduction is masked. A slot-padded patch and a wholly absent patch both come out of the
+    attention as a uniform average (`scaled_dot_product_attention` fills masked logits with
+    finfo.min rather than -inf, so a fully-masked row is uniform, not NaN); `patch_valid`
+    reports the absent ones so the global transformer can mask them out.
+    """
+
+    def __init__(self, cfg):
         super().__init__()
-        self.patch_size = patch_size
         self.query = nn.Parameter(torch.randn(1, 1, cfg.d_local) * 0.02)
         self.attn = MultiHeadAttention(cfg.d_local, cfg.local_n_heads, cfg.dropout)
         self.norm = build_norm(cfg.norm, cfg.d_local)
         self.proj = nn.Linear(cfg.d_local, cfg.d_model)
 
-    def forward(self, byte_states: torch.Tensor, valid: torch.Tensor):
-        """byte_states: (B, L, d_local), valid: (B, L). Returns (patches, patch_valid)."""
-        b, length, d = byte_states.shape
-        assert length % self.patch_size == 0, f"{length} is not a multiple of {self.patch_size}"
-        n = length // self.patch_size
-
-        # Fold the patch axis into the batch axis: every patch pools independently.
-        flat = byte_states.reshape(b * n, self.patch_size, d)
-        flat_valid = valid.reshape(b * n, self.patch_size)
+    def forward(self, byte_states, patch_index, patch_mask):
+        """byte_states (B, L, d_local), grid (B, N, P). Returns (patches, patch_valid)."""
+        b, n, p = patch_index.shape
+        d = byte_states.size(-1)
+        flat = gather_slots(byte_states, patch_index).reshape(b * n, p, d)
+        flat_valid = patch_mask.reshape(b * n, p)
 
         pooled = self.attn(self.query.expand(b * n, 1, d), flat,
                            mask=flat_valid[:, None, None, :])
-        # Mean over valid bytes only, so trailing padding does not dilute the vector.
+        # Mean over occupied slots only, so padding does not dilute the vector.
         mean = ((flat * flat_valid.unsqueeze(-1)).sum(1)
                 / flat_valid.sum(-1, keepdim=True).clamp(min=1))
         patches = self.proj(self.norm(pooled.squeeze(1) + mean)).reshape(b, n, -1)
-        return patches, flat_valid.any(-1).reshape(b, n)
+        return patches, patch_mask.any(-1)
 
 
 class LocalByteDecoder(nn.Module):
@@ -222,8 +254,10 @@ class LocalByteDecoder(nn.Module):
     Latent expansion. h_t is not used as a single vector -- one vector describing a whole patch
     starves the decoder, which then falls back on within-patch English statistics: enough to
     score well under teacher forcing, but it collapses into repetition at inference. h_t is
-    instead expanded into `patch_size` conditioning vectors, one per byte slot. Causality is
-    safe: every slot is a function of h_t alone, and h_t came from patches 0..t-1.
+    instead expanded into `max_patch` conditioning vectors, one per byte slot. Causality is
+    safe: every slot is a function of h_t alone, and h_t came from patches 0..t-1. With
+    variable-width patches the trailing slots of a short patch are simply masked out of the
+    loss; the expansion is sized to the cap.
 
     Direct source access. The decoder also cross-attends to the global *encoder* memory.
     Without it, teacher forcing lets it see the preceding true bytes of its own patch, which
@@ -235,20 +269,22 @@ class LocalByteDecoder(nn.Module):
     within-patch slot code tells it *j* but not which patch it sits in, so its only handle on
     the patch index was h_t itself -- and h_t only carries a usable index once the query
     already works, a deadlock the first run never escaped. The query therefore carries the
-    sinusoidal absolute position of the byte it is emitting, (patch_offset + i) * P + j, which
-    is the same "Sinusoidal Absolute" encoding C1-C4 put on their decoder positions.
+    sinusoidal absolute position of the byte it is emitting, read from the patch grid
+    (`SinusoidalPositionalEncoding.at`), which is the same "Sinusoidal Absolute" encoding
+    C1-C4 put on their decoder positions. Under a fixed stride that position was arithmetic;
+    under entropy patching it has to be looked up, which is the only change here.
 
     All patches are decoded in parallel: they fold into the batch axis for self-attention and
     into the query axis for cross-attention, so the source memory is never copied per patch.
     """
 
-    def __init__(self, cfg, patch_size: int, byte_embed: ByteEmbedding, max_len: int = 4096):
+    def __init__(self, cfg, max_patch: int, byte_embed: ByteEmbedding, max_len: int = 4096):
         super().__init__()
-        self.patch_size = patch_size
+        self.max_patch = max_patch
         self.d_local = cfg.d_local
         lcfg = _local_cfg(cfg)
         self.byte_embed = byte_embed                  # shared with the target local encoder
-        self.latent_expand = nn.Linear(cfg.d_model, patch_size * cfg.d_local)
+        self.latent_expand = nn.Linear(cfg.d_model, max_patch * cfg.d_local)
         self.memory_proj = nn.Linear(cfg.d_model, cfg.d_local)
         self.pos = SinusoidalPositionalEncoding(cfg.d_local, max_len, cfg.dropout)
         self.layers = nn.ModuleList(DecoderLayer(lcfg)
@@ -256,21 +292,20 @@ class LocalByteDecoder(nn.Module):
         self.norm = build_norm(cfg.norm, cfg.d_local)
         self.out = nn.Linear(cfg.d_local, BYTE_VOCAB_SIZE)
 
-    def forward(self, latents, prev_bytes, memory=None, memory_mask=None, patch_offset: int = 0):
-        """latents: (B, N, d_model); prev_bytes: (B, N, P) shifted inputs. `patch_offset` is
-        the index of the first patch in `latents` within the full target, so incremental
-        decoding still gets the right absolute byte positions.
-        Returns byte logits (B, N, P, BYTE_VOCAB_SIZE)."""
+    def forward(self, latents, prev_bytes, byte_pos, slot_mask, memory=None, memory_mask=None):
+        """latents (B, N, d_model); prev_bytes / byte_pos / slot_mask (B, N, P).
+
+        `byte_pos` is the absolute byte index of each slot and `slot_mask` says which slots a
+        patch actually occupies. Returns byte logits (B, N, P, BYTE_VOCAB_SIZE).
+        """
         b, n, p = prev_bytes.shape
-        assert p == self.patch_size
+        assert p == self.max_patch, f"grid width {p} != max_patch {self.max_patch}"
 
         slots = self.latent_expand(latents).reshape(b * n, p, self.d_local)
         # sqrt(d_local) on the byte embedding for the same reason LocalByteEncoder applies it:
         # the sinusoidal row added just below has norm ~11.3 and would otherwise bury it.
         x = self.byte_embed(prev_bytes.reshape(b * n, p)) * math.sqrt(self.d_local) + slots
-        # Sinusoidal absolute position over the *byte* index, not the slot within the patch.
-        x = self.pos(x.reshape(b, n * p, self.d_local), offset=patch_offset * p)
-        x = x.reshape(b * n, p, self.d_local)
+        x = x + self.pos.at(byte_pos).reshape(b * n, p, self.d_local)
 
         # Self-attention runs per patch, so patches live on the batch axis: (B*N, P, d).
         # Cross-attention runs against the shared source memory, so there the patch axis is
@@ -281,126 +316,163 @@ class LocalByteDecoder(nn.Module):
         reshape = (lambda t: t.reshape(b, n * p, self.d_local),
                    lambda t: t.reshape(b * n, p, self.d_local))
 
-        mask = causal_mask(p, x.device)
+        # Causal within the patch, and unoccupied slots are never attended to as keys.
+        mask = causal_mask(p, x.device) & slot_mask.reshape(b * n, 1, 1, p)
         for layer in self.layers:
             x = layer(x, mem, tgt_mask=mask, memory_mask=memory_mask, reshape=reshape)
         return self.out(self.norm(x)).reshape(b, n, p, -1)
 
 
 class BLTSeq2Seq(nn.Module):
-    """Local encoder -> patch pooling -> global transformer -> local byte decoder."""
+    """Local encoder -> entropy-patched pooling -> global transformer -> local byte decoder."""
 
-    def __init__(self, cfg, max_len: int = 4096):
+    def __init__(self, cfg, max_len: int = 4096, max_patch: int = MAX_PATCH_SIZE):
         super().__init__()
         self.cfg = cfg
-        self.src_patch, self.tgt_patch = SRC_PATCH_SIZE, TGT_PATCH_SIZE
+        self.max_patch = max_patch
 
-        # Source alphabet is only {'0','1'}, so its n-gram space is tiny -- hence the separate
-        # (much smaller) bucket count.
+        # The source keeps its own bucket count: it is a separate alphabet from the target's
+        # English (the corpus realizes 126 of the 256 byte values), so sharing tables would make
+        # the two streams collide in the same rows.
         self.src_encoder = LocalByteEncoder(cfg, causal=False, max_len=max_len,
                                             ngram_buckets=cfg.src_ngram_buckets)
-        self.src_pooler = PatchPooler(cfg, self.src_patch)
+        self.src_pooler = PatchPooler(cfg)
         self.tgt_encoder = LocalByteEncoder(cfg, causal=True, max_len=max_len)
-        self.tgt_pooler = PatchPooler(cfg, self.tgt_patch)
+        self.tgt_pooler = PatchPooler(cfg)
 
         self.global_model = Seq2SeqTransformer(cfg, None, None, max_len=max_len)
         # Plays the role <bos> plays in the tokenized models: there is no previous patch.
         self.bos_patch = nn.Parameter(torch.randn(1, 1, cfg.d_model) * 0.02)
-        self.local_decoder = LocalByteDecoder(cfg, self.tgt_patch, self.tgt_encoder.embed,
+        self.local_decoder = LocalByteDecoder(cfg, max_patch, self.tgt_encoder.embed,
                                               max_len=max_len)
 
-    def encode_source(self, src_bytes):
-        """(B, Ls) bytes -> (memory (B, Ns, d_model), memory_mask (B, 1, 1, Ns))."""
+    # --- pieces -------------------------------------------------------------------------
+
+    def encode_source(self, src_bytes, src_index, src_mask_grid):
+        """(B, Ls) bytes + grid -> (memory (B, Ns, d_model), memory_mask (B, 1, 1, Ns))."""
         patches, patch_valid = self.src_pooler(self.src_encoder(src_bytes),
-                                               src_bytes != BYTE_PAD_ID)
+                                               src_index, src_mask_grid)
         mask = patch_valid[:, None, None, :]
         return self.global_model.encode(patches, mask), mask
 
-    def _target_patches(self, tgt_bytes):
-        return self.tgt_pooler(self.tgt_encoder(tgt_bytes), tgt_bytes != BYTE_PAD_ID)
+    def _target_patches(self, tgt_bytes, tgt_index, tgt_mask_grid):
+        return self.tgt_pooler(self.tgt_encoder(tgt_bytes), tgt_index, tgt_mask_grid)
 
-    def _shift_for_local_decoder(self, tgt_bytes):
-        """(B, Lt) -> (B, Nt, P), each patch's bytes shifted right by one. Slot 0 gets the
-        PATCH_START marker, so byte j conditions on bytes 0..j-1 and never on itself."""
-        b, length = tgt_bytes.shape
-        shifted = torch.roll(tgt_bytes.reshape(b, length // self.tgt_patch, self.tgt_patch),
-                             shifts=1, dims=-1)
+    def _shift_within_patch(self, tgt_bytes, tgt_index):
+        """(B, Lt) bytes + grid -> (B, N, P), each patch's bytes shifted right by one. Slot 0
+        gets the PATCH_START marker, so byte j conditions on bytes 0..j-1 and never on itself.
+        The roll wraps the last slot into slot 0, which is exactly the slot overwritten."""
+        grid = gather_slots(tgt_bytes, tgt_index)
+        shifted = torch.roll(grid, shifts=1, dims=-1)
         shifted[..., 0] = BYTE_PATCH_START_ID
         return shifted
 
-    def forward(self, src_bytes, tgt_bytes, ctx_bytes=None):
-        """Teacher-forced. Both inputs are padded to a multiple of their patch size; tgt_bytes
-        serves as the labels. Returns (B, Lt, BYTE_VOCAB_SIZE), aligned with tgt_bytes.
+    def _global_latents(self, tgt_patches, patch_valid, memory, memory_mask):
+        """Shift the patch stream right and run the global decoder: slot t holds patch t-1, so
+        the output at slot t has seen patches 0..t-1 and is the conditioning for patch t."""
+        b, n, _ = tgt_patches.shape
+        dec_in = torch.cat([self.bos_patch.expand(b, 1, -1), tgt_patches[:, :-1]], dim=1)
+        # The validity flags shift with the stream they describe: slot 0 is the always-valid
+        # <bos> patch and slot t (t >= 1) carries patch t-1.
+        dec_valid = torch.cat([torch.ones_like(patch_valid[:, :1]), patch_valid[:, :-1]], dim=1)
+        tgt_mask = causal_mask(n, dec_in.device) & dec_valid[:, None, None, :]
+        return self.global_model.decode(dec_in, memory, tgt_mask=tgt_mask,
+                                        memory_mask=memory_mask)
+
+    # --- forward ------------------------------------------------------------------------
+
+    def forward(self, src_bytes, tgt_bytes, grid, ctx_bytes=None):
+        """Teacher-forced. `grid` is the collate function's patch grids for both sides.
+        Returns (B, Lt, BYTE_VOCAB_SIZE), aligned with `tgt_bytes`.
 
         `ctx_bytes` (default `tgt_bytes`) is what actually conditions the decoder: it drives
         both the patch pooling that feeds the global decoder and the within-patch shift fed to
-        the local decoder. Scheduled sampling (train.py) passes a version of it with some
-        positions replaced by the model's own prediction, so the labels stay the true target
-        while the conditioning gets a taste of the model's own mistakes -- exactly the two
-        places (patch-to-patch and byte-within-patch) training would otherwise never expose to
-        anything but ground truth, unlike greedy decoding at evaluation time.
+        the local decoder. Scheduled sampling (train.py), when enabled, passes a version of it
+        with some positions replaced by the model's own prediction, so the labels stay the true
+        target while the conditioning gets a taste of the model's own mistakes.
         """
         if ctx_bytes is None:
             ctx_bytes = tgt_bytes
-        memory, memory_mask = self.encode_source(src_bytes)
-        tgt_patches, tgt_patch_valid = self._target_patches(ctx_bytes)
-        b, n_patches, _ = tgt_patches.shape
+        si, sm = grid["src_patch_index"], grid["src_patch_mask"]
+        ti, tm = grid["tgt_patch_index"], grid["tgt_patch_mask"]
 
-        # Shift the patch stream right: slot t holds patch t-1, so the decoder output at slot
-        # t has seen patches 0..t-1 and is the conditioning needed to produce patch t.
-        dec_in = torch.cat([self.bos_patch.expand(b, 1, -1), tgt_patches[:, :-1]], dim=1)
-        # The validity flags have to be shifted with the stream they describe: slot 0 is the
-        # always-valid <bos> patch and slot t (t >= 1) carries patch t-1.
-        dec_valid = torch.cat([torch.ones_like(tgt_patch_valid[:, :1]),
-                               tgt_patch_valid[:, :-1]], dim=1)
-        tgt_mask = causal_mask(n_patches, dec_in.device) & dec_valid[:, None, None, :]
-        latents = self.global_model.decode(dec_in, memory, tgt_mask=tgt_mask,
-                                           memory_mask=memory_mask)
+        memory, memory_mask = self.encode_source(src_bytes, si, sm)
+        tgt_patches, patch_valid = self._target_patches(ctx_bytes, ti, tm)
+        latents = self._global_latents(tgt_patches, patch_valid, memory, memory_mask)
 
-        logits = self.local_decoder(latents, self._shift_for_local_decoder(ctx_bytes),
-                                    memory, memory_mask)
-        return logits.reshape(b, n_patches * self.tgt_patch, -1)
+        logits = self.local_decoder(latents, self._shift_within_patch(ctx_bytes, ti),
+                                    ti, tm, memory, memory_mask)
+
+        # Scatter the occupied slots back onto the byte axis. Reading the grid's occupied slots
+        # in row-major order yields byte 0, 1, 2, ... (see `dataset._patch_grid`), so the two
+        # boolean selections below line up element for element -- no second gather needed.
+        b, lt = tgt_bytes.shape
+        out = logits.new_zeros(b, lt, BYTE_VOCAB_SIZE)
+        byte_valid = tgt_bytes != BYTE_PAD_ID
+        out[byte_valid] = logits.reshape(b, -1, BYTE_VOCAB_SIZE)[tm.reshape(b, -1)]
+        return out
+
+    # --- inference ----------------------------------------------------------------------
 
     @torch.no_grad()
-    def greedy_decode(self, src_bytes, max_bytes: int):
+    def greedy_decode(self, src_bytes, grid, max_bytes=None):
         """Patch by patch: one global step for the next latent, then the local decoder emits
-        tgt_patch bytes. Bytes so far are re-encoded and pooled exactly as in training."""
-        self.eval()
-        device, b, p = src_bytes.device, src_bytes.size(0), self.tgt_patch
-        memory, memory_mask = self.encode_source(src_bytes)
+        that patch's bytes. Bytes so far are re-encoded and pooled exactly as in training.
 
-        generated = torch.zeros(b, 0, dtype=torch.long, device=device)
+        The patch grid is *known before decoding starts*: the entropy model segments the
+        cipher, and the target inherits that segmentation (see the module docstring). So unlike
+        the paper's decoder-only setting, there is no need to run the entropy model on partial
+        output to decide where the next patch ends -- the grid comes in with the source.
+        """
+        self.eval()
+        device = src_bytes.device
+        si, sm = grid["src_patch_index"], grid["src_patch_mask"]
+        ti, tm = grid["tgt_patch_index"], grid["tgt_patch_mask"]
+        b, n_patches, p = ti.shape
+        n_bytes = int(ti[tm].max()) + 1 if tm.any() else 0
+        if max_bytes is not None:
+            n_bytes = min(n_bytes, max_bytes)
+
+        memory, memory_mask = self.encode_source(src_bytes, si, sm)
+        generated = torch.full((b, n_bytes), BYTE_PAD_ID, dtype=torch.long, device=device)
         finished = torch.zeros(b, dtype=torch.bool, device=device)
 
-        for step in range(max(1, -(-max_bytes // p))):
+        for step in range(n_patches):
             if step == 0:
                 dec_in = self.bos_patch.expand(b, 1, -1)
+                dec_mask = causal_mask(1, device)
             else:
-                patches, _ = self._target_patches(generated)
+                patches, valid = self._target_patches(generated, ti[:, :step], tm[:, :step])
                 dec_in = torch.cat([self.bos_patch.expand(b, 1, -1), patches], dim=1)
-            latents = self.global_model.decode(dec_in, memory,
-                                               tgt_mask=causal_mask(dec_in.size(1), device),
+                dec_valid = torch.cat([torch.ones_like(valid[:, :1]), valid], dim=1)
+                dec_mask = causal_mask(step + 1, device) & dec_valid[:, None, None, :]
+            latents = self.global_model.decode(dec_in, memory, tgt_mask=dec_mask,
                                                memory_mask=memory_mask)
             h = latents[:, -1:, :]
 
-            patch_bytes = torch.full((b, p), BYTE_PATCH_START_ID, dtype=torch.long,
+            slot_index, slot_mask = ti[:, step:step + 1], tm[:, step:step + 1]
+            patch_bytes = torch.full((b, 1, p), BYTE_PATCH_START_ID, dtype=torch.long,
                                      device=device)
-            emitted = []
             for j in range(p):
-                logits = self.local_decoder(h, patch_bytes.unsqueeze(1), memory, memory_mask,
-                                            patch_offset=step)
+                if not bool(slot_mask[:, 0, j].any()):
+                    break
+                logits = self.local_decoder(h, patch_bytes, slot_index, slot_mask,
+                                            memory, memory_mask)
                 nxt = logits[:, 0, j].argmax(-1)
                 # Never emit a control symbol other than EOS; substitute a space.
                 nxt = torch.where(nxt >= BYTE_PAD_ID,
                                   torch.where(nxt == BYTE_EOS_ID, nxt,
-                                              torch.zeros_like(nxt) + 32), nxt)
-                nxt = torch.where(finished, torch.full_like(nxt, BYTE_PAD_ID), nxt)
+                                              torch.full_like(nxt, 32)), nxt)
+                live = slot_mask[:, 0, j] & ~finished
+                nxt = torch.where(live, nxt, torch.full_like(nxt, BYTE_PAD_ID))
                 if j + 1 < p:
-                    patch_bytes[:, j + 1] = nxt
-                emitted.append(nxt)
+                    patch_bytes[:, 0, j + 1] = nxt
+                # Write the byte at the position the grid assigned it, leaving finished or
+                # unoccupied rows as they were.
+                pos = slot_index[:, 0, j].clamp(max=max(n_bytes - 1, 0)).unsqueeze(1)
+                keep = generated.gather(1, pos).squeeze(1)
+                generated.scatter_(1, pos, torch.where(live, nxt, keep).unsqueeze(1))
                 finished = finished | (nxt == BYTE_EOS_ID)
-
-            generated = torch.cat([generated, torch.stack(emitted, dim=1)], dim=1)
             if bool(finished.all()):
                 break
         return generated
@@ -419,9 +491,13 @@ def bytes_to_text(byte_row) -> str:
 
 
 if __name__ == "__main__":
+    import random
     from types import SimpleNamespace
 
+    from entropy_lm import ByteEntropyLM, calibrate_threshold, patch_boundaries
+
     torch.manual_seed(0)
+    random.seed(0)
     # A small stand-in for train.ModelConfig, so this file tests without importing train.py.
     cfg = SimpleNamespace(
         d_model=256, n_heads=8, n_kv_heads=2, d_head=32, d_ff=1024, dropout=0.1,
@@ -431,83 +507,102 @@ if __name__ == "__main__":
         local_n_heads=4, local_attn_window=128,
         ngram_sizes=(3, 4), ngram_buckets=8192, src_ngram_buckets=512,
     )                                     # smaller depth than ModelConfig: this is a shape test
-    assert SRC_PATCH_SIZE == BITS_PER_CHAR * TGT_PATCH_SIZE, (
-        "the two patch grids must cover the same span of text: a target patch is "
-        "TGT_PATCH_SIZE characters and the corpus spends BITS_PER_CHAR cipher characters on "
-        "each of them, so a source patch has to be BITS_PER_CHAR times longer")
-    print(f"patch grids aligned: {SRC_PATCH_SIZE} cipher characters and {TGT_PATCH_SIZE} "
-          f"plaintext characters both span {TGT_PATCH_SIZE} characters of text")
 
-    # A toy that mirrors the corpus -- every plaintext character expands into BITS_PER_CHAR
-    # cipher characters -- rather than two independent random tensors. "Does the model read
-    # its source?" is then a question about learning the map, not about memorising unrelated
-    # pairs, which is what let the first C5 run pass this file and still collapse.
-    # The overfit step below is the only expensive part of this file; run it on the GPU when
-    # there is one, so `python src/models/blt.py` stays a quick check rather than a coffee break.
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    B, CHARS = 6, 16
+    P = MAX_PATCH_SIZE
+
+    # A toy that mirrors the corpus -- the source is the target under a repeating-key XOR, at
+    # one cipher byte per plaintext character, exactly as ByteSeq2SeqDataset delivers it --
+    # rather than two independent random tensors. "Does the model read its source?" is then a
+    # question about learning the map, not about memorising unrelated pairs, which is what let
+    # the first C5 run pass this file and still collapse.
+    B, CHARS = 6, 24
     key = torch.tensor([ord(c) for c in "ANLP2026"], device=dev).repeat(CHARS // 8)
     plain = torch.randint(97, 123, (B, CHARS), device=dev)
-    bits = ((plain ^ key)[..., None]
-            >> torch.arange(7, -1, -1, device=dev)) & 1                  # (B, CHARS, 8), MSB first
-    src = bits.reshape(B, CHARS * BITS_PER_CHAR) + ord("0")              # '0'/'1' characters
-    tgt = plain.clone(); tgt[:, -1] = BYTE_EOS_ID
-    # Row 0 ends four characters early, on both sides, so the grids stay aligned through the
-    # padding and the key-padding masks get exercised.
-    src[0, -4 * BITS_PER_CHAR:] = BYTE_PAD_ID
-    tgt[0, -4:] = BYTE_PAD_ID
-    tgt[0, -5] = BYTE_EOS_ID
-    LS, LT = src.size(1), tgt.size(1)
+    src = plain ^ key                                    # one cipher byte per character, < 128
+    tgt = torch.cat([plain, torch.full((B, 1), BYTE_EOS_ID, device=dev)], dim=1)
+
+    # Variable-width patches, built the way dataset.py builds them: irregular on purpose, so a
+    # bug that silently assumes a fixed stride cannot pass.
+    src_lengths = [[3, 5, 1, 8, 2, 4, 1], [8, 8, 8], [1, 1, 6, 7, 4, 5],
+                   [4, 4, 4, 4, 4, 4], [2, 7, 3, 8, 1, 2, 1], [6, 6, 6, 6]]
+    assert all(sum(l) == CHARS for l in src_lengths)
+
+    def target_lengths(lengths):
+        out = list(lengths)
+        if out[-1] < P:
+            out[-1] += 1
+        else:
+            out.append(1)
+        return out
+
+    def grid_of(lengths_per_example, device):
+        n = max(len(l) for l in lengths_per_example)
+        index = torch.zeros(len(lengths_per_example), n, P, dtype=torch.long)
+        mask = torch.zeros(len(lengths_per_example), n, P, dtype=torch.bool)
+        for i, lengths in enumerate(lengths_per_example):
+            pos = 0
+            for k, size in enumerate(lengths):
+                index[i, k, :size] = torch.arange(pos, pos + size)
+                mask[i, k, :size] = True
+                pos += size
+        return index.to(device), mask.to(device)
+
+    si, sm = grid_of(src_lengths, dev)
+    ti, tm = grid_of([target_lengths(l) for l in src_lengths], dev)
+    grid = {"src_patch_index": si, "src_patch_mask": sm,
+            "tgt_patch_index": ti, "tgt_patch_mask": tm}
+    print(f"patch grid: widths {sorted({n for l in src_lengths for n in l})}, "
+          f"cap {P}, {si.size(1)} source / {ti.size(1)} target patches")
+
+    # The scatter in `forward` relies on this and nothing else: the occupied slots of the grid,
+    # read row-major, are byte 0, 1, 2, ... in order.
+    for i in range(B):
+        assert ti[i][tm[i]].tolist() == list(range(int(tm[i].sum()))), "grid is not in order"
+    print("grid slots enumerate the byte axis in order (what forward's scatter assumes)")
 
     model = BLTSeq2Seq(cfg, max_len=1024).to(dev)
     print(f"BLTSeq2Seq: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M parameters "
-          f"(src patch {SRC_PATCH_SIZE}, tgt patch {TGT_PATCH_SIZE}) on {dev}")
+          f"on {dev}")
 
-    logits = model(src, tgt)
-    assert logits.shape == (B, LT, BYTE_VOCAB_SIZE)
-    memory, _ = model.encode_source(src)
-    patches, _ = model._target_patches(tgt)
-    assert memory.shape == (B, LS // SRC_PATCH_SIZE, cfg.d_model)
-    assert memory.shape[1] == patches.shape[1], \
-        "aligned grids must yield one source patch per target patch"
-    print(f"forward {tuple(logits.shape)}; pooling {LS} src bytes -> {memory.shape[1]} patches, "
-          f"{LT} tgt bytes -> {patches.shape[1]} patches (one per source patch)")
+    logits = model(src, tgt, grid)
+    assert logits.shape == (B, tgt.size(1), BYTE_VOCAB_SIZE)
+    memory, _ = model.encode_source(src, si, sm)
+    assert memory.shape == (B, si.size(1), cfg.d_model)
+    print(f"forward {tuple(logits.shape)}; {CHARS} src bytes -> {memory.shape[1]} patches "
+          f"(mean {CHARS / si.size(1):.1f} bytes/patch)")
 
-    shifted = model._shift_for_local_decoder(tgt)
+    shifted = model._shift_within_patch(tgt, ti)
     assert (shifted[..., 0] == BYTE_PATCH_START_ID).all()
-    assert torch.equal(shifted[..., 1:], tgt.reshape(B, -1, TGT_PATCH_SIZE)[..., :-1])
+    gathered = gather_slots(tgt, ti)
+    assert torch.equal(shifted[..., 1:], gathered[..., :-1])
+    print("within-patch shift is right by one, slot 0 is <patch-start>")
 
     model.eval()
     with torch.no_grad():
-        base = model(src, tgt)
-        for k in (2, 4, 5, 9):
+        base = model(src, tgt, grid)
+        for k in (0, 3, 7, 11, 19):
             alt = tgt.clone()
             alt[:, k] = (alt[:, k] - 97 + 5) % 26 + 97
-            out = model(src, alt)
+            out = model(src, tgt, grid, ctx_bytes=alt)
             assert torch.allclose(base[:, :k + 1], out[:, :k + 1], atol=1e-4), f"byte {k} leaked"
             assert not torch.allclose(base[:, k + 1:], out[:, k + 1:], atol=1e-4)
     print("causality verified: no target byte influences its own or any earlier logit")
 
-    out = model.greedy_decode(src, max_bytes=LT)
-    assert out.shape[0] == B and out.shape[1] <= LT
+    out = model.greedy_decode(src, grid)
+    assert out.shape == (B, tgt.size(1)), (out.shape, tgt.shape)
+    print(f"greedy decode returns {tuple(out.shape)}, one slot per target byte")
 
     with torch.no_grad():
-        default = model(src, tgt)
-        same = model(src, tgt, ctx_bytes=tgt)
-        assert torch.equal(default, same), "ctx_bytes=tgt_bytes must match the no-arg default"
-        corrupted = tgt.clone()
-        corrupted[:, 0] = (corrupted[:, 0] - 97 + 7) % 26 + 97   # first byte of the first patch
-        different = model(src, tgt, ctx_bytes=corrupted)
-        assert not torch.allclose(default, different, atol=1e-4), \
-            "ctx_bytes did not reach the decoder"
-    print("ctx_bytes overrides the decoder's conditioning independently of the labels")
+        same = model(src, tgt, grid, ctx_bytes=tgt)
+        assert torch.equal(base, same), "ctx_bytes=tgt_bytes must match the no-arg default"
 
     model.train()
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     losses = []
     for _ in range(300):
         opt.zero_grad(set_to_none=True)
-        loss = F.cross_entropy(model(src, tgt).reshape(-1, BYTE_VOCAB_SIZE),
+        loss = F.cross_entropy(model(src, tgt, grid).reshape(-1, BYTE_VOCAB_SIZE),
                                tgt.reshape(-1), ignore_index=BYTE_PAD_ID)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -519,8 +614,8 @@ if __name__ == "__main__":
     model.eval()
     keep = tgt != BYTE_PAD_ID
     with torch.no_grad():
-        real = model(src, tgt).argmax(-1)
-        wrong = model(torch.roll(src, 1, 0), tgt).argmax(-1)
+        real = model(src, tgt, grid).argmax(-1)
+        wrong = model(torch.roll(src, 1, 0), tgt, grid).argmax(-1)
     acc = (real[keep] == tgt[keep]).float().mean().item()
     acc_bad = (wrong[keep] == tgt[keep]).float().mean().item()
     assert acc > 0.9, "BLT stack failed to fit a single batch"
@@ -531,8 +626,7 @@ if __name__ == "__main__":
     # meaningless: with six examples the target's own prefix identifies which example it is, so
     # a source-blind model still recalls most of the rest. Byte 0 is the position that cannot
     # be faked. Its decoder input is <patch-start>, its global input is the <bos> patch, and
-    # both are constants -- so its prediction is a pure function of the source. Getting it
-    # right with the real source and wrong with somebody else's is exactly the claim.
+    # both are constants -- so its prediction is a pure function of the source.
     with torch.no_grad():
         first_ok = (real[:, 0] == tgt[:, 0]).float().mean().item()
         first_bad = (wrong[:, 0] == tgt[:, 0]).float().mean().item()
@@ -541,8 +635,21 @@ if __name__ == "__main__":
     assert first_ok > 0.99, "byte 0 is not being predicted from the source at all"
     assert first_bad < 0.5, "byte 0 does not depend on which source it was given"
 
-    # The honest version of this check needs a set too large to memorise, which is what
-    # `train.source_dependence` runs on the real validation split every epoch. Passing here is
-    # necessary and nowhere near sufficient -- the collapsed C5 run passed the old form of this
-    # assertion while scoring +0.25 points on real data.
+    # The entropy patcher itself, end to end on a stream with obvious structure: a repeated
+    # motif is predictable and should be swallowed into long patches, random bytes should not.
+    lm = ByteEntropyLM(max_len=256).to(dev)
+    stream = torch.randint(97, 123, (32, 64), device=dev)
+    ent = lm.entropies(stream)
+    valid = torch.ones_like(stream, dtype=torch.bool)
+    thr = calibrate_threshold(ent, valid, target_mean=TARGET_MEAN_PATCH)
+    ids = patch_boundaries(ent, valid, thr)
+    n = int((ids.max(1).values + 1).sum())
+    sizes = torch.bincount(ids.flatten())
+    assert ids[:, 0].eq(0).all() and (ids.diff(dim=1) >= 0).all(), "patch ids must be monotone"
+    assert int(sizes.max()) <= MAX_PATCH_SIZE * ids.size(0), "cap violated"
+    print(f"entropy patcher: threshold {thr:.3f} nats -> mean patch "
+          f"{valid.sum().item() / n:.2f} bytes (target {TARGET_MEAN_PATCH})")
+
+    # The honest version of the source-dependence check needs a set too large to memorise,
+    # which is what `train.source_dependence` runs on the real validation split every epoch.
     print("blt.py self-test passed")

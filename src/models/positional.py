@@ -39,6 +39,16 @@ class SinusoidalPositionalEncoding(nn.Module):
             raise ValueError(f"Length {offset + t} exceeds max_len={self.pe.size(0)}")
         return self.dropout(x + self.pe[offset:offset + t].unsqueeze(0))
 
+    def at(self, positions: torch.Tensor) -> torch.Tensor:
+        """Rows of the table at arbitrary per-element positions. (..., ) long -> (..., d).
+
+        The contiguous `forward` above assumes element i sits at position offset+i, which is
+        false once C5's patches have variable width: slot j of patch n is at whatever byte
+        index the entropy segmentation put it. This gives those positions the same absolute
+        sinusoidal encoding a contiguous run would have received.
+        """
+        return self.pe[positions]
+
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
     """(x1, x2) -> (-x2, x1) over the two halves of the last dim."""

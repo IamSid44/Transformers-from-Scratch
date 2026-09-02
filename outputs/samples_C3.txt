@@ -1,35 +1,35 @@
 Greedy decoding samples -- C3 (Attention mechanism)
 ====================================================================================================
 
---- test line 3 (bit accuracy 68.35%, edit distance 43) ---
+--- test line 3 (bit accuracy 81.28%, edit distance 2) ---
 GOLD: He had a recurring role in on two episodes of The Bill as character Connor Price In Boulter landed a role as Craig in the episode Teddy s Story of the television series The Long Firm he starred alongside actors Mark Strong and Derek Jacobi Boulter starred as Darren in the theatre productions of the Philip Ridley play Mercury Fur It was performed at the Drum Theatre in Plymouth and the Menier Choco
-PRED: He had a recurring role in on two episodes of The Bill as character Color Price In Boulter landed a role as Argia in the episode Tedby s Story of the television series The Long Firk he statred alongside actors Mark Strong and Derek Jacobi Boulter starred as Darren in the theatre productions of the Philip Ridley play Mercury But It was performed at the Druk Threatte in Plymouth and the Menmer Chica
+PRED: He had a recurring role in on two episodes of The Bill as character Connor Price In Boulter landed a role as Craig in the episode Teddy s Story of the television series The Long Film he starred alongside actors Mark Strong and Derek Jacobi Boulter starred as Darren in the theatre productions of the Philip Ridley play Mercury Fur It was performed at the Drum Theatre in Plymouth and the Menier Choco
 
---- test line 4 (bit accuracy 70.61%, edit distance 21) ---
+--- test line 4 (bit accuracy 70.06%, edit distance 2) ---
 GOLD: In Boulter starred in the play Citizenship written by Mark Ravenhill The play was part of a series which featured different playwrights titled Burn Chatroom Citizenship In a interview fellow actor Ben Whishaw identified Boulter as one of his favorite co stars I loved working with a guy called Robert Boulter who was in the triple bill of Burn Chatroom and Citizenship at the National He played my br
-PRED: In Boulter started in the play Citizenship written by Mark Ravenhill The play was part of a series which featured different playwritts titled Burn Charroom Citizenship In a interview fellow actor Ben Whisaw identified Boulter as one of his favorite co stars I lived working with a guy called Robert Boulter who was in the triple bill of Burn Chatriom and Airizenship at the National He played my brot
+PRED: In Boulter starred in the play Citizenship written by Mark Ravenhill The play was part of a series which featured different playwrits titled Burn Chatroom Citizenship In a interview fellow actor Ben Whishaw identified Boulter as one of his favorite co stars I loved working with a guy called Robert Boulter who was in the triple bill of Burn Chatroom and Citizenship at the National He played my brot
 
---- test line 13 (bit accuracy 88.87%, edit distance 9) ---
+--- test line 13 (bit accuracy 99.96%, edit distance 1) ---
 GOLD: His father died around Du Fu would have been allowed to enter the civil service because of his father s rank but he is thought to have given up the privilege in favour of one of his half brothers He spent the next four years living in the Luoyang area fulfilling his duties in domestic affairs
-PRED: His father died around Du Fu would have been allowed to enter the civil service because of his father s rank but he is thought to have given up the private in favour of one of his half brotherers He spent the next four years living in the Lumyan area fulfiling his duties in domestic affairs
+PRED: His father died around Du Fu would have been allowed to enter the civil service because of his father s rank but he is thought to have given up the privilege in favour of one of his half brothers He spent the next four years living in the Lumyang area fulfilling his duties in domestic affairs
 
---- test line 17 (bit accuracy 84.16%, edit distance 23) ---
+--- test line 17 (bit accuracy 89.22%, edit distance 1) ---
 GOLD: The An Lushan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely itinerant life unsettled by wars associated famines and imperial displeasure Th
-PRED: The An Lustan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely interant life uns settled by wats associated defines and imperial displeasure T
+PRED: The An Lushan Rebellion began in December and was not completely suppressed for almost eight years It caused enormous disruption to Chinese society the census of recorded million people but ten years later the census counted just million the remainder having been displaced or killed During this time Du Fu led a largely itinerant life unsettled by wars associated famines and imperial displeasure Th
 
 --- test line 26 (bit accuracy 100.00%, edit distance 0) ---
 GOLD: Hung summarises his life by concluding that He appeared to be a filial son an affectionate father a generous brother a faithful husband a loyal friend a dutiful official and a patriotic subject
 PRED: Hung summarises his life by concluding that He appeared to be a filial son an affectionate father a generous brother a faithful husband a loyal friend a dutiful official and a patriotic subject
 
---- test line 29 (bit accuracy 80.41%, edit distance 4) ---
+--- test line 29 (bit accuracy 99.97%, edit distance 1) ---
 GOLD: Since the Song dynasty critics have called Du Fu the poet historian sh sh The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advice which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this is inf
-PRED: Since the Song dynasty critics have called Du Fu the poet historian sh sh The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advance which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this is in
+PRED: Since the Song dynasty critics have called Du Fu the poet historian sh sh The most directly historical of his poems are those commenting on military tactics or the successes and failures of the government or the poems of advice which he wrote to the emperor Indirectly he wrote about the effect of the times in which he lived on himself and on the ordinary people of China As Watson notes this is inf
 
---- test line 45 (bit accuracy 67.27%, edit distance 77) ---
+--- test line 45 (bit accuracy 81.39%, edit distance 5) ---
 GOLD: Until the th century the Japanese preferred Bai Juyi above all poets and there were few references to Du Fu although his influence can be seen in some kanshi Chinese poetry made by Japanese poets anthologies such as Bunka Shreish in the th century The first notable Japanese appreciator of Du Fu s poetry was Kokan Shiren a Rinzai Zen patriarch and one of the most prominent authors of the literature
-PRED: Until the th century the Japanese preferred Back Jutz above all pogets and there were few references to Du Fu although his influence can be seen in some manshi Chinese poetry made by Japanese poets anthologies such as Bunka Sherew in the th century The first notable Japanese appreciator of Du Fu s poetry was Koman Shoren a Pinkzak Den patriarch and one of the most prominent authors of the literatu
+PRED: Until the th century the Japanese preferred Bai Juyi above all poets and there were few references to Du Fu although his influence can be seen in some kanshi Chinese poetry made by Japanese poets anthologies such as Bunka Shreish in the th century The first notable Japanese appreciator of Du Fu s poetry was Kokan Shiren a Rinzai Zen patriarch and one of the most prominent authors of the literature
 
---- test line 53 (bit accuracy 99.70%, edit distance 3) ---
+--- test line 53 (bit accuracy 100.00%, edit distance 0) ---
 GOLD: The song was included in the dancing game Just Dance and is also one of the select songs available on the demo version Additionally it is the final main track on the US edition of Now That s What I Call Music
-PRED: The song was included in the dancing game Just Dance and is also one of the sellet songs available on the demo version Additionally it is the final main track on the US edition of Low That s What I Call Music
+PRED: The song was included in the dancing game Just Dance and is also one of the select songs available on the demo version Additionally it is the final main track on the US edition of Now That s What I Call Music
 

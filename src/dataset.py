@@ -28,7 +28,8 @@ Two tokenizers are trained on the training split's chunks, both by `src/bpe.py` 
 
 Two dataset classes consume the same pair list:
   * TokenizedSeq2SeqDataset -- C1-C4, BPE ids on both sides.
-  * ByteSeq2SeqDataset      -- C5, raw bytes, no vocabulary.
+  * ByteSeq2SeqDataset      -- C5, raw bytes, no vocabulary. Both share `cipher_to_bytes`, so
+    the cipher reaches either pathway as one byte per plaintext character.
 """
 
 from __future__ import annotations
@@ -46,7 +47,8 @@ from bpe import BYTE_TO_CHAR, CHAR_TO_BYTE, Regex, Tokenizer, decoders, models, 
 from torch.utils.data import DataLoader, Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "models"))
-from blt import BYTE_EOS_ID, BYTE_PAD_ID, SRC_PATCH_SIZE, TGT_PATCH_SIZE
+from blt import BYTE_EOS_ID, BYTE_PAD_ID
+from entropy_lm import (MAX_PATCH_SIZE, load_entropy_lm, patch_boundaries)
 
 # --- paths -------------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -72,7 +74,12 @@ MAX_LINE_BITS = MAX_LINE_CHARS * BITS_PER_CHAR
 # character fact is used to place the cut points -- chunk boundaries fall on character
 # boundaries, never mid-character. The last chunk of a line is whatever is left over, possibly
 # shorter than CHUNK_CHARS. See `chunk_pairs`.
-CHUNK_CHARS = 64
+#
+# 32 rather than 64: the cipher is a repeating-key XOR of period 8 (see this file's self-test),
+# so any multiple of 8 keeps every chunk starting at key phase 0 and solvable in isolation, and
+# the smaller size buys ~2x the training examples at half the sequence length -- roughly 4x the
+# optimiser steps per unit of compute, which is what the first round of runs was short of.
+CHUNK_CHARS = 32
 
 # --- subword vocabularies (C1-C4) --------------------------------------------------------
 # Two separate tokenizers; a shared vocabulary would be meaningless here since the source
@@ -165,14 +172,26 @@ def chunk_pairs(pairs: list[Pair], chunk_chars: int = CHUNK_CHARS) -> list[Pair]
     return out
 
 
+def cipher_to_bytes(cipher: str) -> bytes:
+    """The 8 characters '0'/'1' the corpus spends on each plaintext character, packed back into
+    the single byte they denote: one cipher byte per plaintext character.
+
+    This is a lossless re-reading of the file, not a tokenization -- no vocabulary, no merges,
+    nothing trained. Both pathways start here: C1-C4 run BPE over the symbols below, and C5
+    (`ByteSeq2SeqDataset`) feeds these bytes straight to its local encoder. Feeding C5 the
+    literal '0'/'1' characters instead would spend one of the 259 byte rows per *bit*, leaving
+    every source position carrying one bit of content and the local encoder to reassemble
+    characters from 8 positions whose n-gram features cannot even see their own bit offset."""
+    return bytes(int(cipher[i:i + BITS_PER_CHAR], 2) for i in range(0, len(cipher), BITS_PER_CHAR))
+
+
 def cipher_to_symbols(cipher: str) -> str:
     """One character per 8-bit unit, via the byte<->character bijection `ByteLevel` uses for
     arbitrary text. This is what lets BPE merge *across* the original 8-bit boundaries: once
     every unit is a single symbol, merging two adjacent symbols builds a token spanning two
     plaintext characters, and so on -- the same freedom `train_plain_tokenizer` has to merge
     characters into words."""
-    raw = bytes(int(cipher[i:i + BITS_PER_CHAR], 2) for i in range(0, len(cipher), BITS_PER_CHAR))
-    return raw.decode("latin-1").translate(BYTE_TO_CHAR)
+    return cipher_to_bytes(cipher).decode("latin-1").translate(BYTE_TO_CHAR)
 
 
 def symbols_to_cipher(symbols: str) -> str:
@@ -333,47 +352,140 @@ def collate_tokenized(batch):
 
 
 class ByteSeq2SeqDataset(Dataset):
-    """Raw bytes on both sides -- no vocabulary. Source bytes are the literal characters of
-    the bit string, ord('0')=48 and ord('1')=49, so C5 consumes the same input file as C1-C4
-    with only the tokenizer removed."""
+    """Raw bytes on both sides -- no vocabulary, no merges, nothing trained.
 
-    def __init__(self, pairs):
+    The source is `cipher_to_bytes`: the corpus writes each byte as 8 characters '0'/'1', and
+    those are packed back into the byte they denote, so a chunk is CHUNK_CHARS source bytes
+    rather than 8x that many. C5 still consumes the same input file as C1-C4 with only the
+    tokenizer removed -- the grouping is the same one `cipher_to_symbols` already performs for
+    the BPE pathway, and it uses only the 8-bits-per-character fact that `chunk_pairs` and the
+    patch grid depend on anyway.
+
+    Each item also carries its **patch lengths**: the variable-width segmentation
+    `entropy_patch_lengths` derived from the entropy model's next-byte surprise, not a fixed
+    stride. `patch_lengths[i]` sums to the source length; the target grid is the same one with
+    the EOS byte folded into the final patch (or given its own, if that patch is already full).
+    """
+
+    def __init__(self, pairs, patch_lengths):
         self.pairs = list(pairs)
+        self.patch_lengths = list(patch_lengths)
+        assert len(self.pairs) == len(self.patch_lengths)
 
     def __len__(self):
         return len(self.pairs)
 
+    @staticmethod
+    def target_patch_lengths(src_lengths: list[int]) -> list[int]:
+        """Source grid -> target grid. The target is the plaintext plus one EOS byte, so it is
+        one byte longer than the source; that byte joins the last patch unless doing so would
+        exceed the cap, in which case it gets a patch of its own."""
+        out = list(src_lengths)
+        if out and out[-1] < MAX_PATCH_SIZE:
+            out[-1] += 1
+        else:
+            out.append(1)
+        return out
+
     def __getitem__(self, i):
         pair = self.pairs[i]
-        return (torch.tensor(list(pair.cipher.encode("latin-1")), dtype=torch.long),
-                torch.tensor(list(pair.plain.encode("latin-1")) + [BYTE_EOS_ID],
-                             dtype=torch.long))
+        src_patches = self.patch_lengths[i]
+        return {
+            "src": torch.tensor(list(cipher_to_bytes(pair.cipher)), dtype=torch.long),
+            "tgt": torch.tensor(list(pair.plain.encode("latin-1")) + [BYTE_EOS_ID],
+                                dtype=torch.long),
+            "src_patches": src_patches,
+            "tgt_patches": self.target_patch_lengths(src_patches),
+        }
 
     def source_lengths(self) -> list[int]:
-        return [len(p.cipher) for p in self.pairs]
+        return [len(p.cipher) // BITS_PER_CHAR for p in self.pairs]
+
+
+def _patch_grid(lengths_per_example: list[list[int]], n_patches: int, max_patch: int):
+    """Patch lengths -> the (B, N, P) gather grid the BLT modules index bytes with.
+
+    Returns (index, mask, patch_valid). `index[b, n, j]` is the byte position of slot j of
+    patch n -- clamped to 0 where the slot is unused, with `mask[b, n, j]` saying so. Ordering
+    matters and is exact: reading the valid slots of `index` in row-major order yields
+    0, 1, 2, ... for every example, because patches partition the byte sequence contiguously
+    and in order. That is what lets `BLTSeq2Seq.forward` scatter its per-slot logits straight
+    back onto the byte axis with a boolean mask instead of a second gather.
+    """
+    b = len(lengths_per_example)
+    index = torch.zeros(b, n_patches, max_patch, dtype=torch.long)
+    mask = torch.zeros(b, n_patches, max_patch, dtype=torch.bool)
+    for i, lengths in enumerate(lengths_per_example):
+        pos = 0
+        for n, size in enumerate(lengths):
+            index[i, n, :size] = torch.arange(pos, pos + size)
+            mask[i, n, :size] = True
+            pos += size
+    return index, mask, mask.any(-1)
 
 
 class CollateBytes:
-    """Pad to a whole number of patches so the patch grid is rectangular. Class-based to
-    stay picklable for DataLoader workers."""
+    """Pad a batch of byte examples and build both patch grids.
 
-    def __init__(self, src_patch=SRC_PATCH_SIZE, tgt_patch=TGT_PATCH_SIZE):
-        self.src_patch, self.tgt_patch = src_patch, tgt_patch
+    Nothing is rounded up to a stride any more: patch widths are whatever the entropy model
+    chose, so the batch is padded to its own longest byte sequence and its own largest patch
+    count. Class-based to stay picklable for DataLoader workers.
+    """
 
-    @staticmethod
-    def _round_up(n, multiple):
-        return int(-(-n // multiple) * multiple)
+    def __init__(self, max_patch: int = MAX_PATCH_SIZE):
+        self.max_patch = max_patch
 
     def __call__(self, batch):
-        srcs, tgts = zip(*batch)
-        max_src = self._round_up(max(len(s) for s in srcs), self.src_patch)
-        max_tgt = self._round_up(max(len(t) for t in tgts), self.tgt_patch)
-        src = torch.full((len(batch), max_src), BYTE_PAD_ID, dtype=torch.long)
-        tgt = torch.full((len(batch), max_tgt), BYTE_PAD_ID, dtype=torch.long)
-        for i, (s, t) in enumerate(zip(srcs, tgts)):
-            src[i, :len(s)] = s
-            tgt[i, :len(t)] = t
-        return {"src": src, "tgt": tgt}
+        b = len(batch)
+        max_src = max(len(e["src"]) for e in batch)
+        max_tgt = max(len(e["tgt"]) for e in batch)
+        src = torch.full((b, max_src), BYTE_PAD_ID, dtype=torch.long)
+        tgt = torch.full((b, max_tgt), BYTE_PAD_ID, dtype=torch.long)
+        for i, e in enumerate(batch):
+            src[i, :len(e["src"])] = e["src"]
+            tgt[i, :len(e["tgt"])] = e["tgt"]
+
+        out = {"src": src, "tgt": tgt}
+        for side in ("src", "tgt"):
+            lengths = [e[f"{side}_patches"] for e in batch]
+            n = max(len(l) for l in lengths)
+            index, mask, valid = _patch_grid(lengths, n, self.max_patch)
+            out[f"{side}_patch_index"] = index
+            out[f"{side}_patch_mask"] = mask
+            out[f"{side}_patch_valid"] = valid
+        return out
+
+
+def entropy_patch_lengths(pairs, device=None, batch_size: int = 1024) -> list[list[int]]:
+    """Segment every chunk's cipher bytes into entropy-driven patches.
+
+    This is BLT's dynamic patching, run once up front rather than inside the training step:
+    the entropy model is frozen, so a chunk's boundaries never change and recomputing them
+    every epoch would only burn time. `entropy_lm.py` explains why the boundaries are read off
+    the *cipher* and then reused for the plaintext.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, threshold, ckpt = load_entropy_lm(device)
+    max_patch = ckpt.get("max_patch", MAX_PATCH_SIZE)
+
+    out: list[list[int]] = []
+    for start in range(0, len(pairs), batch_size):
+        window = pairs[start:start + batch_size]
+        width = max(len(p.plain) for p in window)
+        x = torch.full((len(window), width), BYTE_PAD_ID, dtype=torch.long)
+        for i, pair in enumerate(window):
+            row = cipher_to_bytes(pair.cipher)
+            x[i, :len(row)] = torch.tensor(list(row), dtype=torch.long)
+        x = x.to(device)
+        valid = x != BYTE_PAD_ID
+        ids = patch_boundaries(model.entropies(x), valid, threshold, max_patch)
+        ids, valid = ids.cpu(), valid.cpu()
+        for i, pair in enumerate(window):
+            n = len(pair.plain)
+            row = ids[i, :n]
+            out.append(torch.bincount(row, minlength=int(row.max()) + 1).tolist())
+    return out
 
 
 class LengthGroupedBatchSampler(torch.utils.data.Sampler):
@@ -423,13 +535,17 @@ def make_dataloaders(model_cfg, train_cfg, splits=None, tokenizers=None) -> dict
     if splits is None:
         splits, _ = build_splits()
     chunked = {name: chunk_pairs(p) for name, p in splits.items()}
-    info: dict = {"pairs": splits,
+    info: dict = {"pairs": splits, "chunks": chunked,
                  "chunk_line_ids": {name: [p.line_id for p in cp] for name, cp in chunked.items()}}
 
     if model_cfg.is_blt:
         collate = CollateBytes()
-        datasets = {name: ByteSeq2SeqDataset(p) for name, p in chunked.items()}
-        info["meta"] = {"max_src_len": CHUNK_CHARS * BITS_PER_CHAR, "max_tgt_len": CHUNK_CHARS + 1}
+        datasets = {name: ByteSeq2SeqDataset(p, entropy_patch_lengths(p))
+                    for name, p in chunked.items()}
+        sizes = [n for d in datasets.values() for l in d.patch_lengths for n in l]
+        info["meta"] = {"max_src_len": CHUNK_CHARS, "max_tgt_len": CHUNK_CHARS + 1,
+                        "mean_patch_size": sum(sizes) / len(sizes),
+                        "max_patch_size": MAX_PATCH_SIZE}
     else:
         if tokenizers is None:
             tokenizers = build_tokenizers([p.cipher for p in chunked["train"]],

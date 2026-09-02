@@ -16,6 +16,7 @@ alignment-tolerant and carry the real signal; see the report.
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import time
@@ -309,18 +310,67 @@ def _bar_panels(data: dict[str, dict], panels, path: Path, figsize, nrows=1):
     plt.close(fig)
 
 
+# Units per chunk that each pathway is scored over, and the characters they cover. Used to put
+# C1-C4 and C5 on one axis; see `plot_loss_curves`.
+#   C1-C4: supervised positions are tgt[:, 1:] = w1..wn <eos>, i.e. tgt_len_mean - 1 per chunk.
+#   C5   : supervised positions are every non-pad byte = the chunk's characters plus <eos>.
+UNITS_PER_CHUNK = {"bpe": 9.92, "blt": 32.12}
+CHARS_PER_CHUNK = 31.12
+_LN2 = math.log(2.0)
+
+
+def to_bits_per_char(loss: float, is_blt: bool) -> float:
+    """Cross-entropy in nats-per-unit -> bits per character.
+
+    C1-C4 score one BPE token at a time over a 4,096-way softmax; C5 scores one byte at a time
+    over a 259-way one. Those are different quantities and plotting them on a shared axis says
+    nothing -- C5 predicts more units per chunk (so each carries less information) out of a
+    smaller output space (so a uniform baseline is ln 259 = 5.56 nats against ln 4096 = 8.32).
+    Both advantages are artefacts of the tokenisation, not of the model.
+
+    Characters are the one unit both pathways genuinely share, so normalising to bits per
+    character makes the five curves comparable. It is also how the BLT paper reports
+    bits-per-byte.
+    """
+    units = UNITS_PER_CHUNK["blt" if is_blt else "bpe"]
+    return loss * units / CHARS_PER_CHUNK / _LN2
+
+
 def plot_loss_curves(histories: dict[str, dict], path: Path) -> None:
+    """Three panels: raw train and validation cross-entropy, then validation in bits/character.
+
+    The raw panels are the honest per-unit numbers but are *not* comparable between C1-C4 and
+    C5 (see `to_bits_per_char`), so C5 is drawn dashed there as a warning. The third panel is
+    the comparable view and is the one to read across all five.
+    """
     plt = _style()
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
     for name, hist in sorted(histories.items()):
         color = CONFIG_COLORS.get(name)
-        axes[0].plot(range(1, len(hist["train_loss"]) + 1), hist["train_loss"], label=name, color=color)
-        axes[1].plot(range(1, len(hist["val_loss"]) + 1), hist["val_loss"], label=name, color=color)
-    for ax, title in zip(axes, ("Training loss", "Validation loss")):
-        ax.set_title(title)
+        is_blt = (hist.get("model_config") or {}).get("tokenization") == "blt"
+        style = {"linestyle": "--"} if is_blt else {}
+        label = f"{name} (bytes)" if is_blt else name
+        epochs = range(1, len(hist["train_loss"]) + 1)
+        axes[0].plot(epochs, hist["train_loss"], label=label, color=color, **style)
+        axes[1].plot(epochs, hist["val_loss"], label=label, color=color, **style)
+        axes[2].plot(epochs, [to_bits_per_char(v, is_blt) for v in hist["val_loss"]],
+                     label=name, color=color)
+
+    for ax, title in zip(axes[:2], ("Training loss", "Validation loss")):
+        ax.set_title(f"{title}\n(per token for C1-C4, per byte for C5 -- not comparable)",
+                     fontsize=10)
+        ax.set_ylabel("cross-entropy (nats/unit)")
+    axes[2].set_title("Validation loss, bits per character\n(comparable across all five)",
+                      fontsize=10)
+    axes[2].set_ylabel("bits / character")
+    # Log scale, because the whole ablation lives in the last decade. On a linear axis every
+    # curve is visually pinned to zero after epoch ~10 and the differences between the five --
+    # which is the entire point of the figure -- are invisible.
+    for ax in axes:
+        ax.set_yscale("log")
         ax.set_xlabel("epoch")
-        ax.set_ylabel("cross-entropy")
-        ax.legend()
+        ax.grid(True, which="both", alpha=0.25)
+        ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

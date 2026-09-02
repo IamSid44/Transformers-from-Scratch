@@ -72,12 +72,18 @@ stream.
 
 Splitting into train/val/test is done over **lines** (4,000 / 500 / 500, seed 42), but a line
 is not what a model trains or decodes on. `dataset.chunk_pairs` cuts each line into consecutive
-64-character pieces (`CHUNK_CHARS = 64`; cipher and plaintext are cut at the same character
+32-character pieces (`CHUNK_CHARS = 32`; cipher and plaintext are cut at the same character
 offset, so `cipher[8·start : 8·end]` is always exactly the bits of `plain[start:end]`, no more
 and no less — the only fact this uses is the disclosed 8-bits-per-character encoding, nothing
-about the key). A line's last chunk is whatever is left over, from 1 up to 64 characters.
+about the key). A line's last chunk is whatever is left over, from 1 up to 32 characters.
 **One training/decoding example is one chunk.** This turns 4,000 / 500 / 500 lines into
-39,683 / 4,685 / 4,782 chunks — about 9.9 chunks per line.
+77,373 / 9,133 / 9,322 chunks — about 19.3 chunks per line.
+
+32 is a multiple of the key period 8 (the cipher is a repeating-key XOR; see the self-test in
+`dataset.py`), so every chunk starts at key phase 0 and is solvable in isolation. It was 64 in
+the first round of runs; halving it doubles the example count and halves the sequence length,
+which is what turned a 2,280-step training budget into a ~12,100-step one at the same wall
+clock.
 
 Why chunk at all, given the pipeline already worked one whole line at a time:
 
@@ -172,33 +178,22 @@ Identical across all five configurations, so any difference in the results is ar
 | `d_ff` | 2048 |
 | Heads `h` (`d_head`) | 8 (32) |
 | Dropout / label smoothing | 0.1 / 0.1 |
-| Batching | grouped by approximate length, batch size 1024 |
+| Batching | grouped by approximate length, batch size 256 |
 
-Parameter counts: **C1/C2 12.89M, C3 11.70M, C4 12.88M, C5 22.75M.**
+Parameter counts: **C1/C2 12.89M, C3 11.70M, C4 12.88M, C5 26.68M.**
 
-Optimisation: Adam at 1e-3 with 1 epoch of linear warmup then cosine decay to **10% of the
-peak** (1e-4), gradient clipping at 1.0, batch size 1024, up to 60 epochs with early stopping
+Optimisation: Adam at **6e-4** with 1 epoch of linear warmup then cosine decay to **10% of the
+peak**, gradient clipping at 1.0, **batch size 256**, **40 epochs** with early stopping
 (patience 5 on validation loss). Training runs in plain fp32.
 
-Batch size moved from 16 to 1024 once chunking (§2) cut sequence lengths to 64 tokens: at 1024,
-C5 (the heaviest configuration) peaks at ~49 GB and processes ~2x the examples/second of
-batch 256, on a card with 75-80 GB free even alongside other jobs -- comfortably using the GPU
-`batch_size=16` (tuned for the old ~1,488-token sequences) left mostly idle. Warmup is specified
-in epochs (`warmup_epochs`), not a fixed step count, because `steps_per_epoch` now depends on
-batch size: at 1024 that's 39 steps/epoch, so a fixed `warmup_steps=250` (right for the old
-~2,480 steps/epoch) would have meant over 6 epochs of warmup instead of a small fraction of one.
-`lr=6e-4`/`warmup_epochs=2` was the first setting tried at this batch size; `lr=1e-3` (higher,
-since a much bigger batch gives a lower-variance gradient estimate that tolerates a larger step)
-and `warmup_epochs=1`/`epochs=60` followed after the first several epochs of that run showed
-validation loss still dropping steadily with no sign of a plateau, prompting a higher LR and a
-larger epoch budget rather than waiting out the original one.
-
-An earlier run used a 75% floor, on the reading that both losses still falling at the final
-epoch meant the schedule was winding down too early. That was the wrong diagnosis: the losses
-plateaued high because the old tokenization gave the model nothing aligned to learn from (see
-§5), and a rate that never really came down just kept the late epochs noisy. With the cipher
-side now BPE over byte-boundary-respecting symbols rather than arbitrary bit runs, there are
-real character-aligned units to fit, which is what the 10% floor is for.
+**Why 256 and not 1024.** The first round of runs used batch 1024 for 60 epochs. On the
+39,683 chunks that `CHUNK_CHARS = 64` produced, that is 38 optimiser steps per epoch --
+**2,280 steps in total** -- and every one of the five configurations was still descending at
+its final epoch (`best_epoch == 60` for all five). Those numbers measured convergence *speed*,
+not converged quality, which is why C1 and C2 appeared 4x apart in validation loss when the
+converged gap is 0.101 vs 0.092. Halving the chunk size to 32 and the batch to 256 gives
+**303 steps/epoch**, so 40 epochs is ~12,100 steps -- about 5x the previous budget at
+comparable wall-clock. The learning rate came down from 1e-3 to 6e-4 to suit the smaller batch.
 
 Two deliberate design choices:
 
@@ -209,7 +204,7 @@ Two deliberate design choices:
    English, so the overlap is empty.
 
 **No weight decay and no mixed precision.** Both were removed as unnecessary: the models are
-12–23M parameters trained for at most 60 epochs on 39,683 chunks with dropout 0.1 and label
+12–27M parameters trained for at most 40 epochs on 77,373 chunks with dropout 0.1 and label
 smoothing 0.1 already regularising, and the 96 GB card has no memory pressure that fp16 would
 relieve. Dropping AMP also removes the `GradScaler`, the autocast contexts, and the float32
 softmax/norm upcasts that existed solely to stop fp16 underflow — see §5.
@@ -220,11 +215,21 @@ otherwise 100% teacher-forced (the decoder is always handed the true previous to
 means the model never practices recovering from a mistake, while greedy decoding at evaluation
 feeds back exactly that, letting one early error compound through everything after it.
 `teacher_forcing_prob(step, warmup_steps, total_steps, floor)` stays at 1.0 through the same
-warmup the LR schedule uses, then linearly decays to `scheduled_sampling_floor` (0.7) by the
-end of training: some decoder-input positions get swapped for the model's own prediction
-instead of the gold token, via one extra `torch.no_grad()` forward pass per training step
-(the usual parallelizable approximation for a Transformer decoder). This never touches
-`greedy_decode` or any evaluation path — see §5 for the mechanics on each of C1–C4 and C5.
+warmup the LR schedule uses, then linearly decays to `scheduled_sampling_floor` by the end of
+training: some decoder-input positions get swapped for the model's own prediction instead of
+the gold token, via one extra `torch.no_grad()` forward pass per training step (the usual
+parallelizable approximation for a Transformer decoder). This never touches `greedy_decode` or
+any evaluation path — see §5 for the mechanics on each of C1–C4 and C5.
+
+**It is switched off in the reported runs** (`scheduled_sampling_floor = 1.0`, pure teacher
+forcing). The cipher is an exact deterministic bijection — output character *i* is
+`cipher_byte[i] XOR K[i mod 8]` and depends on no previously generated character — so there is
+no ambiguity for the model to be robust *to*, and mixing in its own wrong predictions is label
+noise rather than regularisation. It also costs a full extra forward pass per step, ~40% of
+step time, when optimiser steps were the binding constraint. The mechanism is kept rather than
+deleted because it is the right answer on a genuinely ambiguous target. Empirically it is not
+missed: with pure teacher forcing C1 greedy-decodes 95.34% of 32-character chunks exactly, so
+the train/inference conditioning mismatch is not costing anything measurable here.
 
 ---
 
@@ -327,19 +332,33 @@ measured, in **[BLT.md](BLT.md)**.
 
 ```
 source bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 32)
-target bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 4)
+target bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (entropy-cut)
                               GlobalTransformer  (the same class as C1, in latent mode)
                               patch latents --LocalByteDecoder--> byte logits
 ```
 
-- **The two patch grids cover the same span of text.** `SRC_PATCH_SIZE = BITS_PER_CHAR *
-  TGT_PATCH_SIZE` — the corpus spends 8 cipher characters on each plaintext character, so a
-  source patch has to be 8× longer to hold the same 4 characters as a target patch. A
-  64-character chunk becomes 16 source patches and 17 target patches (the last holds `<eos>`),
-  source patch *k* and target patch *k* describe the same characters, and the global
-  transformer's sinusoidal table gives them the same positional vector — so the alignment
-  cross-attention has to learn is the identity. Choosing the two strides independently is what
+- **Patching is entropy-driven** (`src/models/entropy_lm.py`), as in the BLT paper, not a
+  fixed stride. A small causal byte-level LM (2 layers, d=128, 0.46M parameters, trained on the
+  training split's cipher bytes to 2.27 nats/byte) scores next-byte entropy, and a new patch
+  opens wherever that entropy crosses a global threshold or the patch reaches
+  `MAX_PATCH_SIZE = 8`. The threshold is calibrated by bisection to a mean patch length of 4.0
+  bytes — BLT does the same, because patch count sets the global transformer's sequence length
+  and leaving it to an arbitrary cut-off makes every cost number incomparable. The resulting
+  lengths really are variable: 13 / 16 / 18 / 16 / 11 / 8 / 6 / 12 % for lengths 1…8.
+- **The two patch grids cover the same span of text.** The entropy segmentation is computed on
+  the *cipher* and reused verbatim for the plaintext. That is legitimate because the two
+  streams are a character-for-character bijection (one cipher byte per plaintext character),
+  and it is necessary because at inference the plaintext does not exist yet — so the grid is
+  known before decoding starts and greedy decoding never has to run the entropy model on its
+  own partial output. Source patch *k* and target patch *k* therefore describe the same
+  characters and get the same sinusoidal position in the global transformer, so the alignment
+  cross-attention has to learn is the identity. Choosing the two grids independently is what
   made the first run collapse; see [BLT.md §3–4](BLT.md).
+- **Variable widths mean gathering, not reshaping.** Every byte-to-patch move goes through a
+  `(B, N, P)` index/mask grid built in `dataset._patch_grid`; `blt.gather_slots` applies it.
+  The grid's occupied slots enumerate the byte axis in order, which is what lets
+  `BLTSeq2Seq.forward` scatter per-slot logits straight back onto the byte axis with a boolean
+  mask. `python src/models/blt.py` asserts that ordering property directly.
 - **Byte embeddings** are a 259-entry table plus hashed byte n-gram embeddings (n = 3, 4),
   with backward-looking windows. Bucket counts are sized per side: 8,192 on the target
   (English, ~148k possible 3-grams) but only 512 on the source, whose alphabet is `{0,1}`
@@ -351,9 +370,9 @@ target bytes --LocalByteEncoder--> byte states --PatchPooler--> patches (stride 
   attending to patch *t+1* would be reading its own answer. `python src/models/blt.py` audits
   this by perturbing individual target bytes and asserting no logit at or before that
   position moves.
-- **Patching is fixed-size**, not entropy-driven. The BLT paper trains a separate byte-level
-  LM to place patch boundaries at entropy spikes; the assignment asks for a *simplified* BLT,
-  and fixed strides keep the patch grid rectangular and batchable.
+- **What is simplified relative to the paper**: the entropy model is 0.46M parameters rather
+  than 100M, and the global/local stacks are sized to this corpus. The patching *rule* is not
+  simplified — boundaries are placed by next-byte entropy, as the paper does.
 - **Byte embeddings are scaled by √`d_local`** before the sinusoidal table is added, the same
   rule `Seq2SeqTransformer._prepare` applies for C1–C4. A sinusoidal row has norm √(d/2) ≈
   11.3 and a fresh embedding has norm ≈ 0.55, so without it the byte identity is under 5% of

@@ -1,0 +1,39 @@
+GPU: NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (102.0 GB)
+
+==============================================================================
+Training C5: pos=sinusoidal, attn=mha, norm=layernorm, tokenization=blt
+  parameters      26.68M (26.68M trainable)
+  train examples  77,373  (303 steps/epoch x 40 epochs)
+  warmup          303 steps (1 epochs)
+  device          cuda
+==============================================================================
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: W&B API key is configured. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run halcr0ju
+wandb: Tracking run with wandb version 0.28.2
+wandb: Run data is saved locally in /scratch/shlok/Temp/Transformers-from-Scratch/wandb/run-20260902_155358-halcr0ju
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run C5
+wandb: ⭐️ View project at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040
+wandb: 🚀 View run at https://wandb.ai/iamsid44-iiit-hyderabad/anlp-a1-2023102040/runs/halcr0ju
+  epoch  1/40  train 2.6798  val 0.7038  ppl 2.02  tf 1.00  src +54.9pt  16m30s  78 ex/s  10033 MiB
+  epoch  2/40  train 1.2469  val 0.2899  ppl 1.34  tf 1.00  src +72.0pt  16m58s  76 ex/s  10033 MiB
+  epoch  3/40  train 1.0528  val 0.1900  ppl 1.21  tf 1.00  src +76.0pt  17m07s  75 ex/s  10033 MiB
+  epoch  4/40  train 0.9882  val 0.1738  ppl 1.19  tf 1.00  src +77.0pt  16m51s  77 ex/s  10033 MiB
+  epoch  5/40  train 0.9587  val 0.1524  ppl 1.16  tf 1.00  src +77.6pt  16m31s  78 ex/s  10033 MiB
+  epoch  6/40  train 0.9403  val 0.1503  ppl 1.16  tf 1.00  src +78.4pt  17m03s  76 ex/s  10033 MiB
+  epoch  7/40  train 0.9295  val 0.1408  ppl 1.15  tf 1.00  src +78.5pt  16m56s  76 ex/s  10033 MiB
+  epoch  8/40  train 0.9177  val 0.1344  ppl 1.14  tf 1.00  src +78.2pt  17m06s  75 ex/s  10033 MiB
+  epoch  9/40  train 0.9120  val 0.1356  ppl 1.15  tf 1.00  src +78.8pt  16m59s  76 ex/s  10033 MiB
+  epoch 10/40  train 0.9094  val 0.1350  ppl 1.14  tf 1.00  src +78.0pt  17m00s  76 ex/s  10033 MiB
+  epoch 11/40  train 0.9047  val 0.1299  ppl 1.14  tf 1.00  src +78.9pt  16m39s  77 ex/s  10033 MiB
+  epoch 12/40  train 0.9012  val 0.1292  ppl 1.14  tf 1.00  src +78.8pt  16m19s  79 ex/s  10033 MiB
+  epoch 13/40  train 0.8993  val 0.1289  ppl 1.14  tf 1.00  src +78.6pt  15m33s  83 ex/s  10033 MiB
+  epoch 14/40  train 0.8970  val 0.1247  ppl 1.13  tf 1.00  src +79.1pt  14m47s  87 ex/s  10033 MiB
+  epoch 15/40  train 0.8943  val 0.1254  ppl 1.13  tf 1.00  src +79.0pt  14m54s  87 ex/s  10033 MiB
+  epoch 16/40  train 0.9004  val 0.1263  ppl 1.13  tf 1.00  src +79.1pt  14m44s  87 ex/s  10033 MiB
+  epoch 17/40  train 0.8922  val 0.1239  ppl 1.13  tf 1.00  src +79.2pt  14m42s  88 ex/s  10033 MiB
+  epoch 18/40  train 0.8893  val 0.1234  ppl 1.13  tf 1.00  src +79.2pt  14m43s  88 ex/s  10033 MiB
+  epoch 19/40  train 0.8886  val 0.1230  ppl 1.13  tf 1.00  src +79.5pt  14m47s  87 ex/s  10033 MiB
+  epoch 20/40  train 0.8874  val 0.1212  ppl 1.13  tf 1.00  src +79.2pt  14m34s  88 ex/s  10033 MiB

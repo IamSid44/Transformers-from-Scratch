@@ -1,0 +1,69 @@
+{
+  "C1": {
+    "config": "C1",
+    "params_millions": 12.88704,
+    "sec_per_step": 0.7642181682749651,
+    "sec_per_epoch_projected": 231.55810498731444,
+    "train_examples_per_sec": 334.98287613059125,
+    "train_peak_memory_mb": 2951.82421875,
+    "decode_ms_per_chunk": 3.8424437197264183,
+    "decode_chunks_per_sec": 260.25104671440704,
+    "decode_peak_memory_mb": 294.31591796875,
+    "steps_per_epoch": 303,
+    "batch_size": 256
+  },
+  "C2": {
+    "config": "C2",
+    "params_millions": 12.88704,
+    "sec_per_step": 0.8716987750498447,
+    "sec_per_epoch_projected": 264.12472884010293,
+    "train_examples_per_sec": 293.6794307016912,
+    "train_peak_memory_mb": 2952.94140625,
+    "decode_ms_per_chunk": 6.0539534526355965,
+    "decode_chunks_per_sec": 165.1813162793065,
+    "decode_peak_memory_mb": 293.74560546875,
+    "steps_per_epoch": 303,
+    "batch_size": 256
+  },
+  "C3": {
+    "config": "C3",
+    "params_millions": 11.702784,
+    "sec_per_step": 0.7829515590248775,
+    "sec_per_epoch_projected": 237.23432238453788,
+    "train_examples_per_sec": 326.96786544346844,
+    "train_peak_memory_mb": 2936.6640625,
+    "decode_ms_per_chunk": 4.693234854002526,
+    "decode_chunks_per_sec": 213.07265268158724,
+    "decode_peak_memory_mb": 280.28076171875,
+    "steps_per_epoch": 303,
+    "batch_size": 256
+  },
+  "C4": {
+    "config": "C4",
+    "params_millions": 12.881408,
+    "sec_per_step": 0.7264424839999265,
+    "sec_per_epoch_projected": 220.11207265197774,
+    "train_examples_per_sec": 352.4022970000553,
+    "train_peak_memory_mb": 2781.009765625,
+    "decode_ms_per_chunk": 3.984198848634435,
+    "decode_chunks_per_sec": 250.99148862581123,
+    "decode_peak_memory_mb": 294.25146484375,
+    "steps_per_epoch": 303,
+    "batch_size": 256
+  },
+  "C5": {
+    "config": "C5",
+    "params_millions": 26.683395,
+    "sec_per_step": 1.4592814125500808,
+    "sec_per_epoch_projected": 442.16226800267447,
+    "train_examples_per_sec": 175.42880886329002,
+    "train_peak_memory_mb": 9599.7373046875,
+    "decode_ms_per_chunk": 37.32398394286918,
+    "decode_chunks_per_sec": 26.792423915160644,
+    "decode_peak_memory_mb": 729.15380859375,
+    "steps_per_epoch": 303,
+    "batch_size": 256,
+    "mean_patch_size": 3.9977950817478796,
+    "max_patch_size": 8
+  }
+}

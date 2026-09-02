@@ -1,46 +1,57 @@
 {
   "C1": {
     "params_millions": 12.88704,
-    "peak_memory_mb": 22798.03271484375,
-    "sec_per_epoch": 65.07173869964997,
-    "examples_per_sec": 610.435144699944,
-    "epochs_run": 60,
-    "wall_seconds": 4305.413306895993,
-    "best_val_loss": 0.7153766142114463,
-    "decode_ms_per_line": 48.82089083199389,
-    "inference_peak_memory_mb": 922.9306640625
+    "peak_memory_mb": 2949.00341796875,
+    "sec_per_epoch": 304.86128318249996,
+    "examples_per_sec": 253.9719035179311,
+    "epochs_run": 40,
+    "wall_seconds": 12895.047008517999,
+    "best_val_loss": 0.10104415889298003,
+    "decode_ms_per_line": 208.3044015320047,
+    "inference_peak_memory_mb": 191.5107421875
   },
   "C2": {
     "params_millions": 12.88704,
-    "peak_memory_mb": 22798.93896484375,
-    "sec_per_epoch": 69.89713891003291,
-    "examples_per_sec": 568.4641457233034,
-    "epochs_run": 60,
-    "wall_seconds": 4611.823058363996,
-    "best_val_loss": 0.17684097653107828,
-    "decode_ms_per_line": 62.688254992011935,
-    "inference_peak_memory_mb": 990.13134765625
+    "peak_memory_mb": 2950.12060546875,
+    "sec_per_epoch": 329.4265987894253,
+    "examples_per_sec": 235.3307832818992,
+    "epochs_run": 40,
+    "wall_seconds": 13919.329021171001,
+    "best_val_loss": 0.09202549334079196,
+    "decode_ms_per_line": 228.17287640400173,
+    "inference_peak_memory_mb": 191.4404296875
   },
   "C3": {
     "params_millions": 11.702784,
-    "peak_memory_mb": 22785.49755859375,
-    "sec_per_epoch": 66.37977236584969,
-    "examples_per_sec": 598.4204195172747,
-    "epochs_run": 60,
-    "wall_seconds": 4385.20417359499,
-    "best_val_loss": 0.32948830308245014,
-    "decode_ms_per_line": 54.61353414601763,
-    "inference_peak_memory_mb": 985.71337890625
+    "peak_memory_mb": 2933.84326171875,
+    "sec_per_epoch": 314.11619287762517,
+    "examples_per_sec": 246.56721873724632,
+    "epochs_run": 40,
+    "wall_seconds": 13254.757220663,
+    "best_val_loss": 0.10282106150277123,
+    "decode_ms_per_line": 213.10746341600316,
+    "inference_peak_memory_mb": 186.9990234375
   },
   "C4": {
     "params_millions": 12.881408,
-    "peak_memory_mb": 21503.96826171875,
-    "sec_per_epoch": 62.87514439761677,
-    "examples_per_sec": 631.9200915094497,
-    "epochs_run": 60,
-    "wall_seconds": 4165.503027946004,
-    "best_val_loss": 0.42420012638013155,
-    "decode_ms_per_line": 51.66794665201451,
-    "inference_peak_memory_mb": 990.21142578125
+    "peak_memory_mb": 2778.18896484375,
+    "sec_per_epoch": 288.5749132046997,
+    "examples_per_sec": 268.2819349924106,
+    "epochs_run": 40,
+    "wall_seconds": 12202.912540846999,
+    "best_val_loss": 0.09700687877608537,
+    "decode_ms_per_line": 199.3836475499993,
+    "inference_peak_memory_mb": 191.4892578125
+  },
+  "C5": {
+    "params_millions": 26.68,
+    "peak_memory_mb": 10033.0,
+    "sec_per_epoch": 962.15,
+    "examples_per_sec": 80.7,
+    "epochs_run": 20,
+    "wall_seconds": 19243.0,
+    "best_val_loss": 0.12115297044102033,
+    "decode_ms_per_line": 861.7774551360053,
+    "inference_peak_memory_mb": 487.4619140625
   }
 }
