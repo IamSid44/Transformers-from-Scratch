@@ -213,6 +213,6 @@
     "ngram_buckets": 8192,
     "src_ngram_buckets": 8192
   },
-  "recovered_from_log": "/scratch/shlok/Temp/Transformers-from-Scratch/logs/train_C5.log",
+  "recovered_from_log": "<project-root>/logs/train_C5.log",
   "stopped_early_on_time_budget": true
 }

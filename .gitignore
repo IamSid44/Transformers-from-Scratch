@@ -1,11 +1,12 @@
 .env
+.venv/
 checkpoints/
 wandb/
+logs/
 __pycache__/
 *.py[cod]
 *.egg-info/
-*_assignment1.zip
 archive/
-.venv/logs/
 2023102040_assignment1/
+*_assignment1.zip
 *.zip
